@@ -1,0 +1,24 @@
+
+digraph architecture {
+    rankdir=LR;
+    node [shape=box style=filled fillcolor=lightgrey];
+
+    ToolRegistry [label="ToolRegistry
+(MCP Server)"];
+    ResourceRegistry [label="ResourceRegistry
+(MCP Server)"];
+    PromptRegistry [label="PromptRegistry
+(MCP Server)"];
+    McpRegistrar [label="McpRegistrar
+(MCP Server)"];
+    TaskScheduler [label="TaskScheduler
+(MCP Server)"];
+
+    ToolRegistry -> McpRegistrar [dir=both];
+    ResourceRegistry -> McpRegistrar [dir=both];
+    PromptRegistry -> McpRegistrar [dir=both];
+    TaskScheduler -> ToolRegistry [label="InvokeTool"];
+    TaskScheduler -> McpRegistrar [label="Discovery"];
+
+    McpRegistrar -> TaskScheduler [label="Registry Info"];
+}

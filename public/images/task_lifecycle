@@ -1,0 +1,16 @@
+
+digraph lifecycle {
+    rankdir=TB;
+    node [shape=box style=filled fillcolor=lightblue];
+
+    Created [label="Task Created"];
+    Scheduled [label="Scheduled or Immediate Execution"];
+    Resolved [label="Resolved Tool via ToolRegistry"];
+    Execution [label="Execution in Isolated Context"];
+    Success [label="Status: Completed"];
+    Failure [label="Status: Failed or Retry"];
+
+    Created -> Scheduled -> Resolved -> Execution;
+    Execution -> Success;
+    Execution -> Failure;
+}

@@ -358,11 +358,10 @@ impl TaskExecutor {
 
     /// Get current memory usage for the task
     fn _get_current_memory_usage() -> u64 {
-        // For tests, check if we have a mock memory usage value
-        #[cfg(test)]
-        {
-            if let Some(mock_memory) = crate::tests::test_resource_limits::get_mock_memory_usage() {
-                return mock_memory;
+        // For testing or overrides, allow an env var to specify mock memory usage
+        if let Ok(val) = std::env::var("REGISTRY_SCHEDULER_MOCK_MEMORY_BYTES") {
+            if let Ok(bytes) = val.parse::<u64>() {
+                return bytes;
             }
         }
 

@@ -3,8 +3,6 @@ pub mod error;
 pub mod models;
 pub mod monitoring;
 pub mod servers;
-#[cfg(test)]
-pub mod tests;
 pub mod transport;
 pub mod utils;
 

@@ -1,0 +1,35 @@
+{
+  "id": "echo",
+  "name": "Echo",
+  "version": "0.1.0",
+  "runtime": "process",
+  "description": "Echoes the 'text' parameter as MCP text content",
+  "entry": {
+    "command": "python3",
+    "args": ["tools/echo/echo.py"]
+  },
+  "schema": {
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string", "description": "Text to echo" }
+      }
+    },
+    "returns": {
+      "type": "object"
+    }
+  },
+  "policy": {
+    "timeout_ms": 5000,
+    "memory_bytes": 134217728,
+    "cpu_time_ms": 2000,
+    "max_output_bytes": 65536,
+    "network": "deny",
+    "fs": { "preopen_tmp": false }
+  },
+  "metadata": {
+    "categories": ["example", "python"]
+  }
+}

@@ -90,7 +90,7 @@ pub struct ToolRegistryServer {
 
 #[derive(Debug)]
 struct StoredManifest {
-    manifest: manifest::ToolManifest,
+    _manifest: manifest::ToolManifest,
     runtime: ToolRuntime,
     policy: Policy,
     params_validator: Option<jsonschema::JSONSchema>,
@@ -195,6 +195,38 @@ impl ToolRegistryServer {
                         env_allowlist: vec![],
                     })
                 }
+                "python-uv-script" => {
+                    // Map to: uv run [uv_args...] <script>
+                    let script = lt.manifest.entry.get("script")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let mut args: Vec<String> = vec!["run".to_string()];
+                    if let Some(arr) = lt.manifest.entry.get("uv_args").and_then(|v| v.as_array()) {
+                        for v in arr.iter() {
+                            if let Some(s) = v.as_str() { args.push(s.to_string()); }
+                        }
+                    }
+                    args.push(script.to_string());
+                    ToolRuntime::Process(tool_runtime::ProcessConfig {
+                        command: PathBuf::from("uv"),
+                        args,
+                        env_allowlist: vec![],
+                    })
+                }
+                "binary" => {
+                    let cmd = lt.manifest.entry.get("command")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let args: Vec<String> = lt.manifest.entry.get("args")
+                        .and_then(|v| v.as_array())
+                        .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+                        .unwrap_or_default();
+                    ToolRuntime::Process(tool_runtime::ProcessConfig {
+                        command: PathBuf::from(cmd),
+                        args,
+                        env_allowlist: vec![],
+                    })
+                }
                 "wasm" => {
                     let wasm_path = lt.manifest.entry.get("wasm_path")
                         .and_then(|v| v.as_str())
@@ -248,7 +280,7 @@ impl ToolRegistryServer {
             man_map.insert(
                 tool.id.clone(),
                 StoredManifest {
-                    manifest: lt.manifest.clone(),
+                    _manifest: lt.manifest.clone(),
                     runtime,
                     policy,
                     params_validator,

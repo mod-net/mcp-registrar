@@ -1,3 +1,24 @@
+### Tool Runtimes and Execution Contract
+
+Tools are executed by the Tool Registry via process-based runtimes. The registry supports:
+
+- process: run any executable with fixed command/args.
+- python-uv-script: run a single-file Python script via `uv run`, using PEP 723 metadata to declare dependencies.
+- binary: run a native binary.
+
+All runtimes use the same stdin/stdout contract:
+
+- Input (stdin): a single JSON line
+  - `{ "arguments": <params> }`
+- Output (stdout): a single JSON line. Either
+  - Direct MCP content: `{ "content": [ ... ], "isError": bool }`, or
+  - Any JSON value, which the MCP gateway wraps as `{ content: [{ type: "json", json: <value> }], isError: false }`.
+
+JSON Schema
+
+- tools/list returns each tool with `inputSchema` populated from the registry’s parameter schema.
+- Return schemas are used internally for validation; the MCP gateway returns content arrays, not output schemas.
+
 # Model Context Protocol (MCP)
 
 MCP is a protocol that allows the model to access tools and resources through a RPC interface. It is implemented as a server that will provide their service to the mcp client through RPC Commands.
@@ -30,15 +51,13 @@ MCP Tools are tools that are provided to the model through the model context pro
 ```json
 # tools/call - Call a tool
 {
-    "jsonrpc": "2.0",
-    "method": "tools/call",
-    "params": {
-        "tool_name": "<TOOL_NAME>",
-        "arguments": {
-            ["key": "string"]: "value"
-        }
-    },
-    "id": "<MSG_ID>"
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "<TOOL_ID>",
+    "arguments": { "key": "value" }
+  },
+  "id": "<MSG_ID>"
 }
 ```
 
@@ -53,13 +72,17 @@ MCP Tools are tools that are provided to the model through the model context pro
 ```
 
 ```json
-# result - Result of a tool call
+# result - Result of a tool call (MCP-native)
 {
-    "jsonrpc": "2.0",
-    "result": {
-        ["key": "string"]: "value"
-    },
-    "id": "<MSG_ID>"
+  "jsonrpc": "2.0",
+  "result": {
+    "content": [
+      { "type": "text", "text": "..." }
+      // or { "type": "json", "json": { /* payload */ } }
+    ],
+    "isError": false
+  },
+  "id": "<MSG_ID>"
 }
 ```
 

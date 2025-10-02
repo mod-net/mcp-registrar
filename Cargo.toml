@@ -28,6 +28,7 @@ env_logger = "0.10"
 tempfile = "3.19.1"
 anyhow = "1.0"
 reqwest = { version = "0.12", default-features = false, features = ["json", "gzip", "brotli", "rustls-tls", "multipart", "blocking"] }
+axum = { version = "0.7", features = ["json"] }
 wasmtime = { version = "16", default-features = false, features = ["async", "wat", "cranelift"] }
 wasmtime-wasi = "16"
 jsonschema = "0.17"
@@ -47,6 +48,10 @@ wat = "1.0"
 [[bin]]
 name = "mcp-registrar"
 path = "src/bin/mcp_registrar.rs"
+
+[[bin]]
+name = "mcp-registrar-client"
+path = "src/bin/mcp_registrar_client.rs"
 
 [[bin]]
 name = "mcp_gateway"

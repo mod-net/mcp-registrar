@@ -1,0 +1,39 @@
+{
+  "id": "echo-python",
+  "name": "Echo (Python via uv)",
+  "version": "0.1.0",
+  "runtime": "python-uv-script",
+  "description": "Echoes the input using a uv-executed Python single-file script",
+  "entry": {
+    "script": "tools/echo_python/echo.py",
+    "uv_args": ["--cached"]
+  },
+  "schema": {
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text"],
+      "properties": {
+        "text": { "type": "string", "description": "Text to echo" }
+      }
+    },
+    "returns": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "echo": { "type": "string" }
+      }
+    }
+  },
+  "policy": {
+    "timeout_ms": 8000,
+    "memory_bytes": 134217728,
+    "cpu_time_ms": 2000,
+    "max_output_bytes": 65536,
+    "network": "deny",
+    "fs": { "preopen_tmp": false }
+  },
+  "metadata": {
+    "categories": ["example", "python"]
+  }
+}

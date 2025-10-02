@@ -14,6 +14,33 @@ fn write_error(stdout: &mut impl Write, id: &serde_json::Value, code: i64, messa
     writeln!(stdout, "{}", Value::Object(obj))
 }
 
+fn wrap_tool_result_for_mcp(inner: Value) -> Value {
+    // If the tool already returned MCP-shaped content, pass it through.
+    if let Some(arr) = inner.get("content").and_then(|c| c.as_array()) {
+        let is_error = inner
+            .get("isError")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        return json!({ "content": arr, "isError": is_error });
+    }
+
+    // Otherwise, wrap according to type. Strings become text content; everything else becomes json content.
+    let is_error = inner
+        .get("isError")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    match inner {
+        Value::String(s) => json!({
+            "content": [{ "type": "text", "text": s }],
+            "isError": is_error
+        }),
+        other => json!({
+            "content": [{ "type": "json", "json": other }],
+            "isError": is_error
+        }),
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize registry (loads manifests and sets up executors)
     let rt = tokio::runtime::Runtime::new()?;
@@ -97,7 +124,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     // Extract tool output (CallToolResult payload) for MCP result
                     let inner = v.get("result").and_then(|r| r.get("result")).cloned()
                         .ok_or("Internal error: malformed invocation result")?;
-                    Ok(inner)
+                    Ok(wrap_tool_result_for_mcp(inner))
                 }
                 "prompts/list" => {
                     // Return prompts in MCP shape; current registry is in-memory and may be empty

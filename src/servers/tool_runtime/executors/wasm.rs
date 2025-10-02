@@ -92,7 +92,7 @@ impl Executor for WasmExecutor {
         let export_name = cfg.export.clone();
 
         // Execute synchronously inside spawn_blocking, but enforce async timeout
-        let module_path = module_path.clone();
+        let _module_path = module_path.clone();
         let max_bytes = policy.max_output_bytes;
         let timeout = std::time::Duration::from_millis(policy.timeout_ms);
         let fuel_budget: u64 = std::cmp::max(1_000_000, policy.cpu_time_ms.saturating_mul(10_000)) as u64;

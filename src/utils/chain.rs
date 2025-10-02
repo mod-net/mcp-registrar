@@ -81,7 +81,7 @@ impl FileChainIndex {
             let mut out = HashMap::new();
             for (k, mv) in mods {
                 // Ensure module_id is present before deserializing
-                let mut obj = mv.clone();
+                let obj = mv.clone();
                 let mut obj_map = obj.as_object().cloned().ok_or_else(|| Error::Serialization("expected object".into()))?;
                 obj_map.entry("module_id".to_string()).or_insert(serde_json::Value::String(k.clone()));
                 let mp: ModulePointer = serde_json::from_value(serde_json::Value::Object(obj_map))?;

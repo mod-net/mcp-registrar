@@ -51,8 +51,8 @@ cargo build
 ### Running a Server
 
 ```bash
-# Start the MCP Registrar server
-cargo run -- start-registrar
+# Start the MCP Registrar server over stdio only
+cargo run --bin mcp-registrar
 
 # Start the Task Scheduler server
 cargo run -- start-task-scheduler
@@ -67,9 +67,102 @@ cargo run -- start-resource-registry
 cargo run -- start-prompt-registry
 ```
 
+To expose the registrar over HTTP JSON-RPC in addition to stdio, pass `--http-addr` and optionally disable stdio:
+
+```bash
+# Stdio + HTTP (listens on 127.0.0.1:8080)
+RUST_LOG=info cargo run --bin mcp-registrar -- --http-addr 127.0.0.1:8080
+
+# HTTP only
+RUST_LOG=info cargo run --bin mcp-registrar -- --http-addr 127.0.0.1:8080 --no-stdio
+```
+
+An accompanying CLI client, `mcp-registrar-client`, issues the registrar's JSON-RPC commands over HTTP:
+
+```bash
+# List servers (defaults to http://127.0.0.1:8080)
+cargo run --bin mcp-registrar-client -- list-servers
+
+# Register a server via HTTP
+cargo run --bin mcp-registrar-client -- register-server \
+  --name text-generator \
+  --description "Text generator MCP server" \
+  --version 0.1.0 \
+  --capabilities tools \
+  --endpoint http://127.0.0.1:9000
+```
+
 ## Architecture
 
 See the [ARCHITECTURE.md](ARCHITECTURE.md) document for detailed information on the architecture and design principles of this project.
+
+## MCP Tool Behavior
+
+- tools/list exposes each tool with `inputSchema` (JSON Schema) derived from the registry’s parameter schema.
+- tools/call returns MCP-native results in the form:
+
+```json
+{
+  "content": [
+    { "type": "text", "text": "..." }
+    // or { "type": "json", "json": { /* payload */ } }
+  ],
+  "isError": false
+}
+```
+
+If a tool prints a single JSON line that is not already MCP content, the gateway wraps it as `{ type: "json" }` content.
+
+## Tool Runtimes and Contract
+
+The Tool Registry executes tools via process-based runtimes:
+
+- `process` — run any executable with fixed command/args.
+- `python-uv-script` — run a single-file Python script via `uv run` using PEP 723 metadata for dependencies.
+- `binary` — run a native binary.
+
+All runtimes use the same stdin/stdout contract:
+
+- Stdin (one line): `{"arguments": <params>}`
+- Stdout (one line): either MCP content `{ content: [...], isError }` or any JSON value (wrapped as `{type:"json"}`).
+
+Policies (timeouts, memory, output bytes, network) are configurable per manifest.
+
+## Scaffolding Modules
+
+You can scaffold modules under `tools/<name>/` with the `registry-scheduler` binary:
+
+```bash
+# Python single-file script (uv-managed)
+cargo run -- scaffold-module \
+  --name echo_python \
+  --runtime python-uv-script \
+  --version 0.1.0 \
+  --description "Echo tool via Python+uv" \
+  --categories example,python \
+  --deps "orjson"
+
+# Native binary
+cargo run -- scaffold-module \
+  --name echo_bin \
+  --runtime binary \
+  --version 0.1.0 \
+  --description "Echo tool via native binary" \
+  --categories example,binary \
+  --command /usr/local/bin/echo \
+  --args "-n"
+```
+
+This generates `tools/<name>/tool.json` and the appropriate script/entry. For `python-uv-script`, ensure [`uv`](https://github.com/astral-sh/uv) is installed and on PATH. The script’s PEP 723 header declares dependencies; you can edit it or use `uv add --script tools/<name>/<name>.py <dep>`.
+
+## Example Tools
+
+This repo includes examples:
+
+- `tools/echo/` — simple process-based Python tool that returns MCP text content.
+- `tools/echo_python/` — single-file Python script runnable via `uv` (not required for tests).
+
+Start the Tool Registry and it will auto-load `tools/**/tool.json` on startup.
 
 ## Chain Module Resolution
 

@@ -19,6 +19,8 @@ use registry_scheduler::transport::stdio_transport::{StdioTransportServer, Trans
 use registry_scheduler::utils::task_storage::{FileTaskStorage, TaskStorage};
 use registry_scheduler::McpServer;
 use registry_scheduler::TaskMetricsCollector;
+use std::fs;
+use std::io::{self, BufRead};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -288,6 +290,258 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 Err(e) => eprintln!("Failed to register server: {}", e),
+            }
+        }
+        Command::ScaffoldModule {
+            name,
+            runtime,
+            version,
+            description,
+            categories,
+            deps,
+            uv_args,
+            command,
+            args,
+            adapter,
+            adapter_lang,
+            adapter_mode,
+            adapter_arg_style,
+        } => {
+            // Create tools/<name>/ directory
+            let base = PathBuf::from("tools").join(&name);
+            fs::create_dir_all(&base)?;
+
+            // Build categories array
+            let cats: Vec<String> = categories
+                .split(|c| c == ',' || c == ' ')
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string())
+                .collect();
+
+            // Construct manifest JSON
+            let mut manifest = serde_json::json!({
+                "id": name,
+                "name": name,
+                "version": version,
+                "runtime": runtime,
+                "description": if description.is_empty() { format!("{} module", name) } else { description.clone() },
+                "schema": {
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"text": {"type": "string"}},
+                        "required": ["text"],
+                        "additionalProperties": false
+                    },
+                    "returns": {"type": "object"}
+                },
+                "policy": {
+                    "timeout_ms": 8000,
+                    "memory_bytes": 134217728u64,
+                    "cpu_time_ms": 2000,
+                    "max_output_bytes": 262144,
+                    "network": "deny",
+                    "fs": {"preopen_tmp": false}
+                },
+                "metadata": {"categories": cats}
+            });
+
+            match runtime.as_str() {
+                "python-uv-script" => {
+                    // Write script with PEP 723 header
+                    let script_path = base.join(format!("{}.py", name));
+                    let deps_list: Vec<&str> = deps
+                        .split(|c| c == ',' || c == ' ')
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    let mut header = String::from("# /// script\n# requires-python = \">=3.10\"\n# dependencies = [\n");
+                    for d in &deps_list {
+                        header.push_str(&format!("#   \"{}\",\n", d));
+                    }
+                    header.push_str("# ]\n# ///\n\n");
+                    let body = r#"import sys, json
+
+def main():
+    line = sys.stdin.readline()
+    try:
+        payload = json.loads(line) if line else {"arguments": {}}
+    except Exception as e:
+        print(json.dumps({"isError": True, "error": f"invalid JSON: {e}"}))
+        return
+    args = payload.get("arguments", {})
+    text = args.get("text", "")
+    print(json.dumps({"echo": text}))
+
+if __name__ == "__main__":
+    main()
+"#;
+                    fs::write(&script_path, format!("{}{}", header, body))?;
+
+                    // entry
+                    let mut entry = serde_json::Map::new();
+                    entry.insert("script".into(), serde_json::Value::String(script_path.to_string_lossy().into_owned()));
+                    let uv: Vec<String> = uv_args
+                        .split(' ')
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string())
+                        .collect();
+                    if !uv.is_empty() {
+                        entry.insert("uv_args".into(), serde_json::Value::Array(uv.into_iter().map(serde_json::Value::String).collect()));
+                    }
+                    manifest["entry"] = serde_json::Value::Object(entry);
+                }
+                "binary" => {
+                    let default_args: Vec<String> = args
+                        .split(' ')
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string())
+                        .collect();
+
+                    if adapter && adapter_lang == "python" {
+                        // Generate a Python adapter that maps JSON arguments to CLI flags and wraps stdout into MCP content
+                        let adapter_path = base.join("adapter.py");
+                        let template = r#"#!/usr/bin/env python3
+import sys, json, subprocess, shlex
+
+BINARY_COMMAND = __CMD__
+BINARY_DEFAULT_ARGS = __DARGS__
+ARG_STYLE = __ARG_STYLE__  # 'gnu' or 'posix'
+MODE = __MODE__  # 'auto', 'text', or 'json'
+
+def build_argv(arguments: dict):
+    argv = [BINARY_COMMAND, *BINARY_DEFAULT_ARGS]
+    for key, val in arguments.items():
+        flag = f"--{key}" if ARG_STYLE == 'gnu' else f"-{key}"
+        if isinstance(val, bool):
+            if val:
+                argv.append(flag)
+        elif isinstance(val, (int, float, str)):
+            argv.extend([flag, str(val)])
+        elif isinstance(val, list):
+            for item in val:
+                if isinstance(item, bool):
+                    if item:
+                        argv.append(flag)
+                else:
+                    argv.extend([flag, str(item)])
+        else:
+            argv.extend([flag, json.dumps(val)])
+    return argv
+
+def main():
+    line = sys.stdin.readline()
+    try:
+        payload = json.loads(line) if line else {"arguments": {}}
+    except Exception as e:
+        print(json.dumps({"content":[{"type":"text","text":"invalid JSON: " + str(e)}],"isError":True}))
+        return
+    args = payload.get("arguments", {})
+    argv = build_argv(args if isinstance(args, dict) else {})
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True)
+        out = proc.stdout.strip()
+        err = proc.stderr.strip()
+        is_error = proc.returncode != 0
+        if MODE in ("json", "auto"):
+            try:
+                parsed = json.loads(out) if out else None
+                if parsed is not None:
+                    print(json.dumps({"content":[{"type":"json","json": parsed}],"isError": is_error}))
+                    return
+            except Exception:
+                if MODE == "json":
+                    print(json.dumps({"content":[{"type":"text","text": out or err}],"isError": True}))
+                    return
+        # default text wrapping
+        print(json.dumps({"content":[{"type":"text","text": out}],"isError": is_error}))
+    except FileNotFoundError:
+        print(json.dumps({"content":[{"type":"text","text":"binary not found: " + str(BINARY_COMMAND)}],"isError": True}))
+
+if __name__ == "__main__":
+    main()
+"#;
+                        let mut py = template.to_string();
+                        py = py.replace("__CMD__", &serde_json::to_string(&command)?);
+                        py = py.replace("__DARGS__", &serde_json::to_string(&default_args)?);
+                        py = py.replace("__ARG_STYLE__", &serde_json::to_string(&adapter_arg_style)?);
+                        py = py.replace("__MODE__", &serde_json::to_string(&adapter_mode)?);
+                        fs::write(&adapter_path, py)?;
+
+                        let mut entry = serde_json::Map::new();
+                        entry.insert("command".into(), serde_json::Value::String("python3".to_string()));
+                        entry.insert("args".into(), serde_json::json!([adapter_path.to_string_lossy()]));
+                        manifest["entry"] = serde_json::Value::Object(entry);
+                    } else {
+                        // No adapter, run the binary directly
+                        let mut entry = serde_json::Map::new();
+                        entry.insert("command".into(), serde_json::Value::String(command.clone()));
+                        if !default_args.is_empty() {
+                            entry.insert("args".into(), serde_json::Value::Array(default_args.into_iter().map(serde_json::Value::String).collect()));
+                        }
+                        manifest["entry"] = serde_json::Value::Object(entry);
+                    }
+                }
+                "process" => {
+                    // Treat as pass-through for author-provided command/args (not typical via scaffolder)
+                    manifest["entry"] = serde_json::json!({"command": "", "args": []});
+                }
+                other => {
+                    eprintln!("Unsupported runtime for scaffolding: {}", other);
+                    return Ok(());
+                }
+            }
+
+            let manifest_path = base.join("tool.json");
+            fs::write(&manifest_path, serde_json::to_string_pretty(&manifest)?)?;
+            println!("Scaffolded module at {}", base.display());
+        }
+        Command::RegistryTool => {
+            // Initialize in-process tool registry
+            let registry = ToolRegistryServer::new();
+            if let Err(e) = registry.initialize().await {
+                eprintln!("{}", serde_json::to_string(&json!({"isError": true, "error": format!("init failed: {}", e)}))?);
+                return Ok(());
+            }
+
+            // Read a single JSON line from stdin
+            let mut line = String::new();
+            let stdin = io::stdin();
+            let _ = stdin.lock().read_line(&mut line);
+            let payload: serde_json::Value = match serde_json::from_str(line.trim()) {
+                Ok(v) => v,
+                Err(e) => {
+                    println!("{}", serde_json::to_string(&json!({"isError": true, "error": format!("invalid JSON: {}", e)}))?);
+                    return Ok(());
+                }
+            };
+            let args = payload.get("arguments").cloned().unwrap_or(json!({}));
+            let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("list");
+
+            match action {
+                "list" | "list_tools" => {
+                    match registry.handle("ListTools", json!({})).await {
+                        Ok(res) => {
+                            let tools = res.get("tools").cloned().unwrap_or(json!([]));
+                            println!("{}", serde_json::to_string(&json!({"tools": tools}))?);
+                        }
+                        Err(e) => println!("{}", serde_json::to_string(&json!({"isError": true, "error": e.to_string()}))?),
+                    }
+                }
+                "invoke" | "call" => {
+                    let name = args.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let parameters = args.get("arguments").cloned().unwrap_or(json!({}));
+                    let req = json!({"invocation": {"tool_id": name, "parameters": parameters}});
+                    match registry.handle("InvokeTool", req).await {
+                        Ok(res) => {
+                            // Return the underlying tool result if present
+                            let out = res.get("result").and_then(|r| r.get("result")).cloned().unwrap_or(json!({}));
+                            println!("{}", serde_json::to_string(&out)?);
+                        }
+                        Err(e) => println!("{}", serde_json::to_string(&json!({"isError": true, "error": e.to_string()}))?),
+                    }
+                }
+                other => {
+                    println!("{}", serde_json::to_string(&json!({"isError": true, "error": format!("unknown action: {}", other)}))?);
+                }
             }
         }
     }

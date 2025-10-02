@@ -1,0 +1,39 @@
+{
+  "id": "registry",
+  "name": "Tool Registry",
+  "version": "0.1.0",
+  "runtime": "process",
+  "description": "List and invoke tools from the in-process registry via a one-shot CLI",
+  "entry": {
+    "command": "cargo",
+    "args": ["run", "--quiet", "--bin", "registry-scheduler", "--", "registry-tool"]
+  },
+  "schema": {
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "type": "string",
+          "description": "Action to perform",
+          "enum": ["list", "list_tools", "invoke", "call"],
+          "default": "list"
+        },
+        "name": { "type": "string", "description": "Tool id to invoke (for action=invoke/call)" },
+        "arguments": { "type": "object", "description": "Arguments for the tool invocation" }
+      }
+    },
+    "returns": { "type": "object" }
+  },
+  "policy": {
+    "timeout_ms": 10000,
+    "memory_bytes": 268435456,
+    "cpu_time_ms": 5000,
+    "max_output_bytes": 262144,
+    "network": "deny",
+    "fs": { "preopen_tmp": false }
+  },
+  "metadata": {
+    "categories": ["core", "registry"]
+  }
+}

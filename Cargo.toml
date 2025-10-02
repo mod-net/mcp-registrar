@@ -29,6 +29,13 @@ tempfile = "3.19.1"
 anyhow = "1.0"
 reqwest = { version = "0.12", default-features = false, features = ["json", "gzip", "brotli", "rustls-tls", "multipart", "blocking"] }
 axum = { version = "0.8.6", features = ["json"] }
+tower-http = { version = "0.5", features = ["cors"] }
+aes-gcm = "0.10"
+scrypt = "0.11"
+rand = "0.8"
+dirs = "5"
+which = "6"
+termios = { version = "0.3", optional = false }
 wasmtime = { version = "37.0.1", default-features = false, features = ["async", "wat", "cranelift"] }
 wasmtime-wasi = "37.0.1"
 jsonschema = "0.33.0"
@@ -80,6 +87,14 @@ path = "src/main.rs"
 [[bin]]
 name = "text-generator"
 path = "src/bin/text_generator.rs"
+
+[[bin]]
+name = "module-api"
+path = "src/bin/module_api.rs"
+
+[[bin]]
+name = "keytools"
+path = "src/bin/keytools.rs"
 
 [dev-dependencies]
 tokio-test = "0.4"

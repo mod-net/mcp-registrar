@@ -3,7 +3,8 @@ use crate::servers::tool_runtime::{Executor, Policy, ToolRuntime};
 use crate::utils::{ipfs, chain, module_cache};
 use std::path::Path;
 use wasmtime::{Config, Engine, Linker, Module, Store};
-use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, add_to_linker};
+use wasmtime_wasi::WasiCtxBuilder;
+use wasmtime_wasi::p1::{WasiP1Ctx, add_to_linker_sync};
 
 #[derive(Debug)]
 pub struct WasmExecutor;
@@ -104,15 +105,15 @@ impl Executor for WasmExecutor {
             let module = Module::new(&engine, &module_bytes)
                 .map_err(|e| Error::Serialization(format!("wasm load error: {}", e)))?;
 
-            // Build WASI context (no preopens, no env by default)
-            let wasi = WasiCtxBuilder::new().build();
-            let mut store = Store::new(&engine, wasi);
+            // Build WASI Preview 1 context (no preopens, no env by default)
+            let wasi_p1 = WasiCtxBuilder::new().build_p1();
+            let mut store = Store::new(&engine, wasi_p1);
             // Add fuel (v16 API uses set_fuel)
             store.set_fuel(fuel_budget).map_err(|e| Error::Serialization(e.to_string()))?;
 
             // Linker with WASI (safe even if module does not import WASI)
-            let mut linker: Linker<WasiCtx> = Linker::new(&engine);
-            add_to_linker(&mut linker, |cx| cx)
+            let mut linker: Linker<WasiP1Ctx> = Linker::new(&engine);
+            add_to_linker_sync(&mut linker, |cx: &mut WasiP1Ctx| cx)
                 .map_err(|e| Error::Serialization(e.to_string()))?;
 
             let instance = linker

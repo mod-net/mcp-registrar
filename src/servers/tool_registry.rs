@@ -93,8 +93,8 @@ struct StoredManifest {
     _manifest: manifest::ToolManifest,
     runtime: ToolRuntime,
     policy: Policy,
-    params_validator: Option<jsonschema::JSONSchema>,
-    returns_validator: Option<jsonschema::JSONSchema>,
+    params_validator: Option<jsonschema::Validator>,
+    returns_validator: Option<jsonschema::Validator>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -272,9 +272,9 @@ impl ToolRegistryServer {
             // Compile schemas up-front
             let (params_validator, returns_validator) = {
                 let p = lt.manifest.schema.parameters.clone()
-                    .and_then(|s| jsonschema::JSONSchema::compile(&s).ok());
+                    .and_then(|s| jsonschema::Validator::new(&s).ok());
                 let r = lt.manifest.schema.returns.clone()
-                    .and_then(|s| jsonschema::JSONSchema::compile(&s).ok());
+                    .and_then(|s| jsonschema::Validator::new(&s).ok());
                 (p, r)
             };
             man_map.insert(

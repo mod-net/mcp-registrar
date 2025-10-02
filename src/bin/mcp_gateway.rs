@@ -165,7 +165,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .ok_or_else(|| format!("Prompt not found: {}", name))?;
                     // Validate against variables_schema if present
                     if let Some(schema) = prompt.get("variables_schema") {
-                        if let Ok(compiled) = jsonschema::JSONSchema::compile(schema) {
+                        if let Ok(compiled) = jsonschema::Validator::new(schema) {
                             if let Err(_e) = compiled.validate(&args) {
                                 return Err("Invalid params: prompt arguments failed schema".into());
                             }

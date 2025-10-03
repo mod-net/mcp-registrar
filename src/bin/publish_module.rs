@@ -10,6 +10,7 @@ use subxt_signer::{sr25519, SecretUri};
 use std::str::FromStr;
 use reqwest::blocking::{Client, multipart::{Form, Part}};
 use registry_scheduler::utils::chain;
+use registry_scheduler::config::env;
 
 #[derive(Parser, Debug)]
 #[command(name = "publish-module", about = "Generate signed module metadata (v1)")]
@@ -125,9 +126,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let ipfs_base = args
                 .ipfs_base
                 .clone()
-                .or_else(|| std::env::var("IPFS_API_URL").ok())
-                .or_else(|| std::env::var("IPFS_BASE_URL").ok())
-                .ok_or("Set --ipfs-base or IPFS_API_URL/IPFS_BASE_URL for publish")?;
+                .or_else(|| env::ipfs_api_url())
+                .ok_or("Set --ipfs-base or IPFS_API_URL for publish")?;
             let cid = upload_to_commune_ipfs(&ipfs_base, &args.ipfs_api_key, &args.artifact)?;
             artifact_uri = format!("ipfs://{}", cid);
             // update metadata
@@ -139,13 +139,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let ipfs_base = args
             .ipfs_base
             .clone()
-            .or_else(|| std::env::var("IPFS_API_URL").ok())
-            .or_else(|| std::env::var("IPFS_BASE_URL").ok())
-            .ok_or("Set --ipfs-base or IPFS_API_URL/IPFS_BASE_URL for publish")?;
+            .or_else(|| env::ipfs_api_url())
+            .ok_or("Set --ipfs-base or IPFS_API_URL for publish")?;
         let cid_md = upload_bytes_to_commune_ipfs(&ipfs_base, &args.ipfs_api_key, json.as_bytes(), "metadata.json")?;
 
         // 3) Register on chain
-        let rpc = args.chain_rpc_url.or_else(|| std::env::var("CHAIN_RPC_URL").ok())
+        let rpc = args.chain_rpc_url.or_else(|| Some(env::chain_rpc_url()))
             .ok_or("Set --chain-rpc-url or CHAIN_RPC_URL for publish")?;
         register_on_chain(&rpc, &args.suri, &args.module_id, &cid_md)?;
         println!("Registered module: {} -> {}", args.module_id, cid_md);

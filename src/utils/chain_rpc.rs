@@ -1,12 +1,13 @@
 use crate::error::Error;
 use crate::utils::{ipfs, chain, metadata};
 use crate::utils::chain::ModulePointer;
+use crate::config::env;
 
 /// Resolve a `chain://<SS58>` module id using Substrate RPC, fetch signed metadata from IPFS,
 /// verify digest + signature with the SS58 key, and return a verified ModulePointer to the artifact.
 pub async fn resolve_via_rpc(module_uri: &str) -> Result<ModulePointer, Error> {
     let id = module_uri.strip_prefix("chain://").ok_or_else(|| Error::InvalidState("invalid chain uri".into()))?;
-    let url = std::env::var("CHAIN_RPC_URL").map_err(|_| Error::InvalidState("CHAIN_RPC_URL not set".into()))?;
+    let url = env::chain_rpc_url();
 
     // Connect
     let api = subxt::OnlineClient::<subxt::config::PolkadotConfig>::from_url(&url)

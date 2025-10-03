@@ -1,3 +1,6 @@
+pub mod config {
+    pub mod env;
+}
 pub mod cli;
 pub mod error;
 pub mod models;

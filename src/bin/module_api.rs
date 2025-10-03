@@ -1,4 +1,4 @@
-use axum::{extract::{Path, Query, State}, routing::{get, post}, Json, Router};
+use axum::{extract::{Path, Query, State, DefaultBodyLimit}, routing::{get, post}, Json, Router};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use reqwest::blocking::{Client, multipart::{Form, Part}};
@@ -8,6 +8,12 @@ use subxt_signer::{sr25519, SecretUri};
 use registry_scheduler::utils::{chain, ipfs, metadata};
 use tower_http::cors::{CorsLayer, Any};
 use std::str::FromStr;
+use std::path::PathBuf;
+use aes_gcm::{Aes256Gcm, Key, Nonce};
+use aes_gcm::aead::{Aead, KeyInit};
+use base64::{engine::general_purpose, Engine as _};
+use scrypt::Params;
+use registry_scheduler::config::env;
 
 #[derive(Clone)]
 struct AppState {
@@ -15,6 +21,35 @@ struct AppState {
     chain_rpc_url: String,
     ipfs_base: Option<String>,
     ipfs_api_key: Option<String>,
+}
+
+// ===== keytools integration: load SURI from encrypted key file =====
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct EncBlobV1 { version: u8, kdf: String, salt: String, params: EncParams, nonce: String, ciphertext: String }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct EncParams { n: u32, r: u32, p: u32 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct KeyJsonMinimal { secret_phrase: Option<String> }
+
+fn decrypt_key(blob:&EncBlobV1, password:&str) -> Result<KeyJsonMinimal, Box<dyn std::error::Error>> {
+    if blob.kdf.to_lowercase()!="scrypt" { return Err("Unsupported KDF".into()); }
+    let salt = general_purpose::STANDARD.decode(&blob.salt)?;
+    let n = blob.params.n.max(1); let r = blob.params.r.max(1); let p = blob.params.p.max(1);
+    let log_n = (31 - n.leading_zeros()) as u8; let params = Params::new(log_n, r, p, 32)?;
+    let mut key=[0u8;32]; scrypt::scrypt(password.as_bytes(), &salt, &params, &mut key)?;
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key));
+    let nonce = general_purpose::STANDARD.decode(&blob.nonce)?; let ct = general_purpose::STANDARD.decode(&blob.ciphertext)?;
+    let pt = cipher.decrypt(Nonce::from_slice(&nonce), ct.as_ref()).map_err(|_| "Decryption failed: wrong password or corrupted key file")?;
+    let kj: KeyJsonMinimal = serde_json::from_slice(&pt)?;
+    Ok(kj)
+}
+
+fn load_suri_from_keytools(name: &str, password: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let file = env::keys_dir().join(if name.ends_with(".json") { name.to_string() } else { format!("{}.json", name) });
+    let blob: EncBlobV1 = serde_json::from_slice(&std::fs::read(&file)?)?;
+    let kj = decrypt_key(&blob, password)?;
+    if let Some(phrase) = kj.secret_phrase { Ok(phrase) } else { Err("key file does not contain a secret phrase; cannot build SURI".into()) }
 }
 
 #[derive(Deserialize)]
@@ -94,9 +129,12 @@ struct PublishResponse {
 struct RegisterRequest {
     module_id: String,
     metadata_cid: String,
-    #[serde(default = "default_suri")] 
-    suri: String,
+    // Optional explicit SURI if not using keytools name/password
+    suri: Option<String>,
     chain_rpc_url: Option<String>,
+    // optional: use keytools-stored key instead of SURI
+    key_name: Option<String>,
+    key_password: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -117,9 +155,9 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     let state = AppState {
-        chain_rpc_url: std::env::var("CHAIN_RPC_URL").unwrap_or_else(|_| "ws://127.0.0.1:9944".into()),
-        ipfs_base: std::env::var("IPFS_API_URL").ok().or_else(|| std::env::var("IPFS_BASE_URL").ok()),
-        ipfs_api_key: std::env::var("IPFS_API_KEY").ok(),
+        chain_rpc_url: env::chain_rpc_url(),
+        ipfs_base: env::ipfs_api_url(),
+        ipfs_api_key: env::ipfs_api_key(),
     };
 
     let app = Router::new()
@@ -134,9 +172,12 @@ async fn main() -> anyhow::Result<()> {
             .allow_origin(Any)
             .allow_methods(Any)
             .allow_headers(Any)
-        );
+        )
+        .layer({
+            DefaultBodyLimit::max(env::module_api_max_upload_bytes())
+        });
 
-    let addr: SocketAddr = std::env::var("MODULE_API_ADDR").unwrap_or_else(|_| "127.0.0.1:8090".into()).parse()?;
+    let addr: SocketAddr = env::module_api_addr().parse()?;
     tracing::info!("module_api listening on {}", addr);
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
@@ -211,8 +252,11 @@ async fn publish(State(state): State<AppState>, Json(req): Json<PublishRequest>)
             .chain_rpc_url
             .clone()
             .unwrap_or_else(|| state.chain_rpc_url.clone());
-        // Use default SURI if not provided via separate register API
-        register_on_chain(&rpc, &default_suri(), &req.module_id, &cid_md).map_err(internal)?;
+        // Require configured key name/password for auto-register, no fallback
+        let name = std::env::var("MODULE_API_KEY_NAME").map_err(|_| internal("MODULE_API_KEY_NAME not set"))?;
+        let password = std::env::var("MODULE_API_KEY_PASSWORD").map_err(|_| internal("MODULE_API_KEY_PASSWORD not set"))?;
+        let suri_from_key = load_suri_from_keytools(&name, &password).map_err(internal)?;
+        register_on_chain(&rpc, &suri_from_key, &req.module_id, &cid_md).map_err(internal)?;
         registered = true;
     }
 
@@ -221,7 +265,15 @@ async fn publish(State(state): State<AppState>, Json(req): Json<PublishRequest>)
 
 async fn register(State(state): State<AppState>, Json(req): Json<RegisterRequest>) -> Result<Json<RegisterResponse>, (axum::http::StatusCode, String)> {
     let rpc = req.chain_rpc_url.clone().unwrap_or_else(|| state.chain_rpc_url.clone());
-    register_on_chain(&rpc, &req.suri, &req.module_id, &req.metadata_cid).map_err(internal)?;
+    // Validate signing inputs: either both key_name & key_password, or explicit suri
+    if let (Some(name), Some(password)) = (req.key_name.as_ref(), req.key_password.as_ref()) {
+        let suri_from_key = load_suri_from_keytools(name, password).map_err(internal)?;
+        register_on_chain(&rpc, &suri_from_key, &req.module_id, &req.metadata_cid).map_err(internal)?;
+    } else if let Some(suri) = req.suri.as_ref() {
+        register_on_chain(&rpc, suri, &req.module_id, &req.metadata_cid).map_err(internal)?;
+    } else {
+        return Err((axum::http::StatusCode::BAD_REQUEST, "Provide either (key_name & key_password) or suri".into()));
+    }
     Ok(Json(RegisterResponse { ok: true }))
 }
 

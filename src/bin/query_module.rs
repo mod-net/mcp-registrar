@@ -2,6 +2,7 @@ use clap::Parser;
 use registry_scheduler::utils::{chain, ipfs, metadata};
 use subxt::{config::PolkadotConfig, OnlineClient};
 use subxt::dynamic::{storage, Value};
+use registry_scheduler::config::env;
 
 #[derive(Parser, Debug)]
 #[command(name = "query-module", about = "Retrieve a module mapping and metadata by SS58 or 0x pubkey hex")] 
@@ -22,7 +23,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let rpc = std::env::var("CHAIN_RPC_URL").expect("CHAIN_RPC_URL not set");
+    let rpc = env::chain_rpc_url();
     let api = OnlineClient::<PolkadotConfig>::from_url(&rpc).await?;
 
     // Decode module id to raw 32-byte pubkey

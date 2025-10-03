@@ -1,15 +1,7 @@
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-
-fn cache_root() -> PathBuf {
-    std::env::var("REGISTRY_CACHE_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-            Path::new(&home).join(".cache").join("registry-scheduler")
-        })
-}
+use crate::config::env;
 
 fn ensure_dir(p: &Path) {
     let _ = fs::create_dir_all(p);
@@ -18,7 +10,7 @@ fn ensure_dir(p: &Path) {
 fn key_to_path(key: &str) -> PathBuf {
     let mut sanitized = key.replace('/', "_").replace(':', "-");
     if sanitized.len() > 200 { sanitized.truncate(200); }
-    cache_root().join("modules").join(sanitized)
+    env::registry_cache_dir().join("modules").join(sanitized)
 }
 
 pub fn read(key: &str) -> Option<Vec<u8>> {
@@ -34,7 +26,7 @@ pub fn read(key: &str) -> Option<Vec<u8>> {
 }
 
 pub fn write(key: &str, bytes: &[u8]) {
-    let dir = cache_root().join("modules");
+    let dir = env::registry_cache_dir().join("modules");
     ensure_dir(&dir);
     let path = key_to_path(key);
     if let Ok(mut f) = fs::File::create(path) {

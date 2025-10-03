@@ -11,8 +11,7 @@ use clap::{Parser, Subcommand, Args, ValueEnum};
 use rand::RngCore;
 use scrypt::Params;
 use serde::{Deserialize, Serialize};
-
-const DEFAULT_KEYS_DIR: &str = "/home/com/.modnet/keys"; // expanded below
+use registry_scheduler::config::env;
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum Scheme { Sr25519, Ed25519 }
@@ -167,7 +166,7 @@ fn main() -> anyhow::Result<()> {
   Ok(())
 }
 
-fn keys_dir() -> PathBuf { dirs::home_dir().unwrap_or(PathBuf::from("~")).join(".modnet/keys") }
+fn keys_dir() -> PathBuf { env::keys_dir() }
 fn ensure_keys_dir() { let _=fs::create_dir_all(keys_dir()); }
 
 fn require_subkey() { if which::which("subkey").is_err() { eprintln!("Error: 'subkey' not found on PATH"); std::process::exit(1);} }

@@ -1,24 +1,17 @@
 use crate::error::Error;
+use crate::config::env;
 
 /// Return gateway base from env or default.
-fn gateway_base() -> String {
-    std::env::var("IPFS_GATEWAY").unwrap_or_else(|_| "http://127.0.0.1:8080/ipfs/".to_string())
-}
+fn gateway_base() -> String { env::ipfs_gateway_url().unwrap_or_else(|| "http://127.0.0.1:8080/ipfs/".to_string()) }
 
 /// Given an `ipfs://<cid[/path]>` URI, return `<cid[/path]>`.
 fn strip_ipfs_scheme(uri: &str) -> Option<String> {
     uri.strip_prefix("ipfs://").map(|s| s.to_string())
 }
 
-fn ipfs_base_url() -> String {
-    std::env::var("IPFS_API_URL")
-        .or_else(|_| std::env::var("IPFS_BASE_URL"))
-        .unwrap_or_else(|_| "http://127.0.0.1:8000/api".to_string())
-}
+fn ipfs_base_url() -> String { env::ipfs_api_url().unwrap_or_else(|| "http://127.0.0.1:8000/api".to_string()) }
 
-fn ipfs_provider() -> String {
-    std::env::var("IPFS_PROVIDER").unwrap_or_else(|_| "gateway".to_string())
-}
+fn ipfs_provider() -> String { std::env::var("IPFS_PROVIDER").unwrap_or_else(|_| "gateway".to_string()) }
 
 /// Fetch bytes from an ipfs:// URI via configured provider.
 pub async fn fetch_ipfs_bytes(uri: &str) -> Result<Vec<u8>, Error> {

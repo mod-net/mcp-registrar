@@ -4,6 +4,7 @@ use subxt::{OnlineClient, config::PolkadotConfig};
 use subxt::dynamic::{tx, Value};
 use subxt_signer::{sr25519::Keypair, SecretUri};
 use std::str::FromStr;
+use registry_scheduler::config::env;
 
 #[derive(Parser, Debug)]
 #[command(name = "register-module", about = "Register module metadata CID on-chain")]
@@ -24,7 +25,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
-    let url = std::env::var("CHAIN_RPC_URL").expect("CHAIN_RPC_URL not set");
+    let url = env::chain_rpc_url();
     let api = OnlineClient::<PolkadotConfig>::from_url(&url).await?;
 
     // Build signer

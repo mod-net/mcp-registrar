@@ -1,7 +1,7 @@
+use crate::config::env;
 use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use crate::config::env;
 
 fn ensure_dir(p: &Path) {
     let _ = fs::create_dir_all(p);
@@ -9,7 +9,9 @@ fn ensure_dir(p: &Path) {
 
 fn key_to_path(key: &str) -> PathBuf {
     let mut sanitized = key.replace('/', "_").replace(':', "-");
-    if sanitized.len() > 200 { sanitized.truncate(200); }
+    if sanitized.len() > 200 {
+        sanitized.truncate(200);
+    }
     env::registry_cache_dir().join("modules").join(sanitized)
 }
 
@@ -33,4 +35,3 @@ pub fn write(key: &str, bytes: &[u8]) {
         let _ = f.write_all(bytes);
     }
 }
-

@@ -1,13 +1,16 @@
 use clap::Parser;
-use mcp_registrar::utils::chain::decode_pubkey_from_owner;
-use subxt::{OnlineClient, config::PolkadotConfig};
-use subxt::dynamic::{tx, Value};
-use subxt_signer::{sr25519::Keypair, SecretUri};
-use std::str::FromStr;
 use mcp_registrar::config::env;
+use mcp_registrar::utils::chain::decode_pubkey_from_owner;
+use std::str::FromStr;
+use subxt::dynamic::{tx, Value};
+use subxt::{config::PolkadotConfig, OnlineClient};
+use subxt_signer::{sr25519::Keypair, SecretUri};
 
 #[derive(Parser, Debug)]
-#[command(name = "register-module", about = "Register module metadata CID on-chain")]
+#[command(
+    name = "register-module",
+    about = "Register module metadata CID on-chain"
+)]
 struct Args {
     /// Module id (SS58 address or 64-hex public key)
     #[arg(long)]
@@ -29,16 +32,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api = OnlineClient::<PolkadotConfig>::from_url(&url).await?;
 
     // Build signer
-    let kp = Keypair::from_uri(&SecretUri::from_str(&args.suri).map_err(|e| format!("suri: {}", e))?)
-        .map_err(|e| format!("suri: {}", e))?;
+    let kp =
+        Keypair::from_uri(&SecretUri::from_str(&args.suri).map_err(|e| format!("suri: {}", e))?)
+            .map_err(|e| format!("suri: {}", e))?;
 
     // Prepare call: Modules::register_module(key: Vec<u8>, cid: Vec<u8>)
-    let key = decode_pubkey_from_owner(&args.module_id).expect("decode module_id").to_vec();
+    let key = decode_pubkey_from_owner(&args.module_id)
+        .expect("decode module_id")
+        .to_vec();
     let cid = args.metadata_cid.into_bytes();
-    let call = tx("Modules", "register_module", vec![Value::from_bytes(key), Value::from_bytes(cid)]);
+    let call = tx(
+        "Modules",
+        "register_module",
+        vec![Value::from_bytes(key), Value::from_bytes(cid)],
+    );
 
     // Submit and watch
-    let mut progress = api.tx().sign_and_submit_then_watch_default(&call, &kp).await?;
+    let mut progress = api
+        .tx()
+        .sign_and_submit_then_watch_default(&call, &kp)
+        .await?;
     while let Some(status) = progress.next().await {
         let status = status?;
         if let Some(in_block) = status.as_in_block() {

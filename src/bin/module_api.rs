@@ -1,35 +1,26 @@
+use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Key, Nonce};
+use anyhow::anyhow;
 use axum::{
     body::Bytes,
-    extract::{ws::{Message, WebSocket, WebSocketUpgrade},
-        DefaultBodyLimit,
-        Path,
-        Query,
-        State,
+    extract::{
+        ws::{Message, WebSocket, WebSocketUpgrade},
+        DefaultBodyLimit, Path, Query, State,
     },
-    http::{HeaderMap, StatusCode, header::CONTENT_TYPE},
-    response::{IntoResponse, Response, sse::{Sse, Event, KeepAlive}},
+    http::{
+        header::{ACCEPT, CONTENT_TYPE},
+        HeaderMap, StatusCode,
+    },
+    response::{
+        sse::{Event, KeepAlive, Sse},
+        IntoResponse, Response,
+    },
     routing::{get, post},
-    Json,
-    Router,
+    Json, Router,
 };
-use anyhow::anyhow;
+use base64::{engine::general_purpose, Engine as _};
 use futures::{SinkExt, StreamExt};
 use jsonschema::Validator;
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Map, Value};
-use std::collections::HashMap;
-use std::convert::Infallible;
-use std::net::SocketAddr;
-use std::pin::Pin;
-use std::sync::{Arc, Mutex};
-use std::task::{Context, Poll};
-use reqwest::{Client, multipart::{Form, Part}};
-use subxt::{
-    config::PolkadotConfig,
-    dynamic::{tx, storage, Value as SubxtValue},
-    OnlineClient,
-};
-use subxt_signer::{sr25519, SecretUri};
 use mcp_registrar::{
     config::env,
     models::tool::ToolInvocation,
@@ -42,14 +33,29 @@ use mcp_registrar::{
     transport::{HandlerResult, McpServer},
     utils::{chain, ipfs, metadata},
 };
-use tower_http::cors::{CorsLayer, Any};
-use tracing::{error, info, debug};
-use std::str::FromStr;
-use aes_gcm::{Aes256Gcm, Key, Nonce};
-use aes_gcm::aead::{Aead, KeyInit};
-use base64::{engine::general_purpose, Engine as _};
+use reqwest::{
+    multipart::{Form, Part},
+    Client,
+};
 use scrypt::Params;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Map, Value};
+use std::collections::HashMap;
+use std::convert::Infallible;
+use std::net::SocketAddr;
+use std::pin::Pin;
+use std::str::FromStr;
+use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
+use subxt::{
+    config::PolkadotConfig,
+    dynamic::{storage, tx, Value as SubxtValue},
+    OnlineClient,
+};
+use subxt_signer::{sr25519, SecretUri};
 use tokio::sync::mpsc;
+use tower_http::cors::{Any, CorsLayer};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -125,7 +131,10 @@ impl ModuleApiState {
 
 type ApiResult<T> = Result<T, (StatusCode, String)>;
 
-fn resolve_ipfs_base(state: &ModuleApiState, override_base: Option<String>) -> Result<String, ModuleApiError> {
+fn resolve_ipfs_base(
+    state: &ModuleApiState,
+    override_base: Option<String>,
+) -> Result<String, ModuleApiError> {
     override_base
         .or_else(|| state.ipfs_base())
         .ok_or_else(|| ModuleApiError::bad_request("missing ipfs_base"))
@@ -186,7 +195,8 @@ impl ModuleMcpDispatcher {
         if !proto.is_empty() && !supported.contains(&proto) {
             return Err(anyhow!(
                 "Invalid params: unsupported protocolVersion {} (supported: {:?})",
-                proto, supported
+                proto,
+                supported
             )
             .into());
         }
@@ -256,7 +266,7 @@ impl ModuleMcpDispatcher {
 
         let raw = self
             .tool_registry
-            .handle("InvokeTool", serde_json::to_value(request)? )
+            .handle("InvokeTool", serde_json::to_value(request)?)
             .await?;
 
         let response: InvokeToolResponse = serde_json::from_value(raw)
@@ -363,10 +373,7 @@ impl ModuleMcpDispatcher {
             }
         });
 
-        let rendered = self
-            .prompt_registry
-            .handle("RenderPrompt", render)
-            .await?;
+        let rendered = self.prompt_registry.handle("RenderPrompt", render).await?;
 
         let text = rendered
             .get("result")
@@ -394,14 +401,8 @@ impl ModuleMcpDispatcher {
             .unwrap_or_default()
             .into_iter()
             .map(|resource| {
-                let id = resource
-                    .get("id")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                let name = resource
-                    .get("name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
+                let id = resource.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                let name = resource.get("name").and_then(|v| v.as_str()).unwrap_or("");
                 json!({
                     "uri": format!("registry://resource/{}", id),
                     "name": name,
@@ -445,10 +446,7 @@ impl ModuleMcpDispatcher {
             .handle("QueryResource", query)
             .await?;
 
-        let result = response
-            .get("result")
-            .cloned()
-            .unwrap_or_else(|| json!({}));
+        let result = response.get("result").cloned().unwrap_or_else(|| json!({}));
 
         let (mime, content_value) = if let Some(obj) = result.as_object() {
             match (obj.get("mimeType"), obj.get("text"), obj.get("data")) {
@@ -486,7 +484,8 @@ impl ModuleMcpDispatcher {
     }
 
     async fn handle_metrics_get(&self) -> HandlerResult {
-        let (invocations, errors, total_ms, max_ms, total_bytes) = monitoring::TOOL_METRICS.snapshot();
+        let (invocations, errors, total_ms, max_ms, total_bytes) =
+            monitoring::TOOL_METRICS.snapshot();
         Ok(json!({
             "tool": {
                 "invocations": invocations,
@@ -505,21 +504,32 @@ fn wrap_tool_result_for_mcp(inner: Value) -> Value {
             .get("isError")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        return json!({ "content": arr, "isError": is_error });
+        return json!({
+            "content": arr,
+            "isError": is_error,
+        });
     }
+
     let is_error = inner
         .get("isError")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
+
     match inner {
         Value::String(s) => json!({
             "content": [{ "type": "text", "text": s }],
-            "isError": is_error
+            "isError": is_error,
         }),
-        other => json!({
-            "content": [{ "type": "json", "json": other }],
-            "isError": is_error
-        }),
+        other => {
+            let text = match serde_json::to_string_pretty(&other) {
+                Ok(serialized) => serialized,
+                Err(_) => other.to_string(),
+            };
+            json!({
+                "content": [{ "type": "text", "text": text }],
+                "isError": is_error,
+            })
+        }
     }
 }
 
@@ -561,31 +571,67 @@ fn error_code_from_message(message: &str) -> i64 {
 
 // ===== keytools integration: load SURI from encrypted key file =====
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct EncBlobV1 { version: u8, kdf: String, salt: String, params: EncParams, nonce: String, ciphertext: String }
+struct EncBlobV1 {
+    version: u8,
+    kdf: String,
+    salt: String,
+    params: EncParams,
+    nonce: String,
+    ciphertext: String,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct EncParams { n: u32, r: u32, p: u32 }
+struct EncParams {
+    n: u32,
+    r: u32,
+    p: u32,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct KeyJsonMinimal { secret_phrase: Option<String> }
+struct KeyJsonMinimal {
+    secret_phrase: Option<String>,
+}
 
-fn decrypt_key(blob:&EncBlobV1, password:&str) -> Result<KeyJsonMinimal, Box<dyn std::error::Error>> {
-    if blob.kdf.to_lowercase()!="scrypt" { return Err("Unsupported KDF".into()); }
+fn decrypt_key(
+    blob: &EncBlobV1,
+    password: &str,
+) -> Result<KeyJsonMinimal, Box<dyn std::error::Error>> {
+    if blob.kdf.to_lowercase() != "scrypt" {
+        return Err("Unsupported KDF".into());
+    }
     let salt = general_purpose::STANDARD.decode(&blob.salt)?;
-    let n = blob.params.n.max(1); let r = blob.params.r.max(1); let p = blob.params.p.max(1);
-    let log_n = (31 - n.leading_zeros()) as u8; let params = Params::new(log_n, r, p, 32)?;
-    let mut key=[0u8;32]; scrypt::scrypt(password.as_bytes(), &salt, &params, &mut key)?;
+    let n = blob.params.n.max(1);
+    let r = blob.params.r.max(1);
+    let p = blob.params.p.max(1);
+    let log_n = (31 - n.leading_zeros()) as u8;
+    let params = Params::new(log_n, r, p, 32)?;
+    let mut key = [0u8; 32];
+    scrypt::scrypt(password.as_bytes(), &salt, &params, &mut key)?;
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key));
-    let nonce = general_purpose::STANDARD.decode(&blob.nonce)?; let ct = general_purpose::STANDARD.decode(&blob.ciphertext)?;
-    let pt = cipher.decrypt(Nonce::from_slice(&nonce), ct.as_ref()).map_err(|_| "Decryption failed: wrong password or corrupted key file")?;
+    let nonce = general_purpose::STANDARD.decode(&blob.nonce)?;
+    let ct = general_purpose::STANDARD.decode(&blob.ciphertext)?;
+    let pt = cipher
+        .decrypt(Nonce::from_slice(&nonce), ct.as_ref())
+        .map_err(|_| "Decryption failed: wrong password or corrupted key file")?;
     let kj: KeyJsonMinimal = serde_json::from_slice(&pt)?;
     Ok(kj)
 }
 
-fn load_suri_from_keytools(name: &str, password: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let file = env::keys_dir().join(if name.ends_with(".json") { name.to_string() } else { format!("{}.json", name) });
+fn load_suri_from_keytools(
+    name: &str,
+    password: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let file = env::keys_dir().join(if name.ends_with(".json") {
+        name.to_string()
+    } else {
+        format!("{}.json", name)
+    });
     let blob: EncBlobV1 = serde_json::from_slice(&std::fs::read(&file)?)?;
     let kj = decrypt_key(&blob, password)?;
-    if let Some(phrase) = kj.secret_phrase { Ok(phrase) } else { Err("key file does not contain a secret phrase; cannot build SURI".into()) }
+    if let Some(phrase) = kj.secret_phrase {
+        Ok(phrase)
+    } else {
+        Err("key file does not contain a secret phrase; cannot build SURI".into())
+    }
 }
 
 #[derive(Deserialize)]
@@ -598,9 +644,14 @@ struct DigestRequest {
 }
 
 #[derive(Serialize)]
-struct DigestResponse { digest: String }
+struct DigestResponse {
+    digest: String,
+}
 
-async fn publish_digest(State(state): State<ModuleApiState>, Json(req): Json<DigestRequest>) -> ApiResult<Json<DigestResponse>> {
+async fn publish_digest(
+    State(state): State<ModuleApiState>,
+    Json(req): Json<DigestRequest>,
+) -> ApiResult<Json<DigestResponse>> {
     let mut artifact_uri = req.artifact_uri.clone().unwrap_or_default();
     if artifact_uri.is_empty() && req.artifact_base64.is_none() {
         return Err(ModuleApiError::bad_request("provide artifact_uri or artifact_base64").into());
@@ -614,28 +665,49 @@ async fn publish_digest(State(state): State<ModuleApiState>, Json(req): Json<Dig
         let ipfs_base: String = resolve_ipfs_base(&state, req.ipfs_base.clone())
             .map_err(|err: ModuleApiError| -> (StatusCode, String) { err.into() })?;
         let ipfs_api_key_eff = resolve_ipfs_api_key(&state, req.ipfs_api_key.clone());
-        let cid = upload_bytes_to_commune_ipfs(&http_client, &ipfs_base, &ipfs_api_key_eff, &bytes, "artifact.bin")
-            .await
-            .map_err(internal)?;
+        let cid = upload_bytes_to_commune_ipfs(
+            &http_client,
+            &ipfs_base,
+            &ipfs_api_key_eff,
+            &bytes,
+            "artifact.bin",
+        )
+        .await
+        .map_err(internal)?;
         artifact_uri = format!("ipfs://{}", cid);
     } else if !artifact_uri.starts_with("ipfs://") {
-        return Err(ModuleApiError::bad_request("artifact_uri must be ipfs:// or provide artifact_base64").into());
+        return Err(ModuleApiError::bad_request(
+            "artifact_uri must be ipfs:// or provide artifact_base64",
+        )
+        .into());
     }
-    let art_bytes = ipfs::fetch_ipfs_bytes(&artifact_uri).await.map_err(internal)?;
+    let art_bytes = ipfs::fetch_ipfs_bytes(&artifact_uri)
+        .await
+        .map_err(internal)?;
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
     h.update(&art_bytes);
     let digest = h.finalize();
     let digest_hex = hex::encode(digest);
-    Ok(Json(DigestResponse { digest: format!("sha256:{}", digest_hex) }))
+    Ok(Json(DigestResponse {
+        digest: format!("sha256:{}", digest_hex),
+    }))
 }
 
 async fn register_build() -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    Err((StatusCode::NOT_IMPLEMENTED, "register/build is not implemented; submit a fully signed extrinsic via register/submit".into()))
+    Err((
+        StatusCode::NOT_IMPLEMENTED,
+        "register/build is not implemented; submit a fully signed extrinsic via register/submit"
+            .into(),
+    ))
 }
 
 async fn register_submit() -> Result<Json<serde_json::Value>, (StatusCode, String)> {
-    Err((StatusCode::NOT_IMPLEMENTED, "register/submit is not implemented; provide signed extrinsic or use /modules/register".into()))
+    Err((
+        StatusCode::NOT_IMPLEMENTED,
+        "register/submit is not implemented; provide signed extrinsic or use /modules/register"
+            .into(),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -645,8 +717,8 @@ struct PublishRequest {
     artifact_base64: Option<String>,
     module_id: String,
     // client-provided cryptographic binding
-    digest: String,      // e.g., "sha256:<hex>"
-    signature: String,   // base64 or 128-hex sr25519 signature over digest with context "module_digest"
+    digest: String,    // e.g., "sha256:<hex>"
+    signature: String, // base64 or 128-hex sr25519 signature over digest with context "module_digest"
     #[serde(default)]
     version: Option<String>,
     // if true, client is expected to register on-chain via signed extrinsic (use register/build + register/submit)
@@ -658,7 +730,9 @@ struct PublishRequest {
     chain_rpc_url: Option<String>,
 }
 
-fn _default_suri() -> String { "//Alice".to_string() }
+fn _default_suri() -> String {
+    "//Alice".to_string()
+}
 
 #[derive(Serialize)]
 struct PublishResponse {
@@ -680,10 +754,15 @@ struct RegisterRequest {
 }
 
 #[derive(Serialize)]
-struct RegisterResponse { ok: bool }
+struct RegisterResponse {
+    ok: bool,
+}
 
 #[derive(Deserialize)]
-struct QueryParams { raw: Option<bool>, no_verify: Option<bool> }
+struct QueryParams {
+    raw: Option<bool>,
+    no_verify: Option<bool>,
+}
 
 #[derive(Serialize)]
 #[serde(untagged)]
@@ -732,14 +811,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/mcp/sse", get(mcp_sse_stream).post(mcp_sse_post))
         .route("/mcp/ws", get(mcp_ws_upgrade))
         .with_state(shared_state)
-        .layer(CorsLayer::new()
-            .allow_origin(Any)
-            .allow_methods(Any)
-            .allow_headers(Any)
+        .layer(
+            CorsLayer::new()
+                .allow_origin(Any)
+                .allow_methods(Any)
+                .allow_headers(Any),
         )
-        .layer({
-            DefaultBodyLimit::max(env::module_api_max_upload_bytes())
-        });
+        .layer(DefaultBodyLimit::max(env::module_api_max_upload_bytes()));
 
     let addr: SocketAddr = env::module_api_addr().parse()?;
     tracing::info!("module_api listening on {}", addr);
@@ -748,7 +826,10 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn publish(State(state): State<ModuleApiState>, Json(req): Json<PublishRequest>) -> ApiResult<Json<PublishResponse>> {
+async fn publish(
+    State(state): State<ModuleApiState>,
+    Json(req): Json<PublishRequest>,
+) -> ApiResult<Json<PublishResponse>> {
     info!(module_id = %req.module_id, publish = req.publish, "modules/publish request received");
     let mut artifact_uri = req.artifact_uri.clone().unwrap_or_default();
     if artifact_uri.is_empty() && req.artifact_base64.is_none() {
@@ -764,20 +845,36 @@ async fn publish(State(state): State<ModuleApiState>, Json(req): Json<PublishReq
         let bytes = general_purpose::STANDARD
             .decode(b64)
             .map_err(|e| ModuleApiError::bad_request(format!("artifact_base64: {}", e)))?;
-        let cid = upload_bytes_to_commune_ipfs(&http_client, &ipfs_base, &ipfs_api_key_eff, &bytes, "artifact.bin")
-            .await
-            .map_err(internal)?;
+        let cid = upload_bytes_to_commune_ipfs(
+            &http_client,
+            &ipfs_base,
+            &ipfs_api_key_eff,
+            &bytes,
+            "artifact.bin",
+        )
+        .await
+        .map_err(internal)?;
         artifact_uri = format!("ipfs://{}", cid);
     } else if !artifact_uri.starts_with("ipfs://") {
         debug!(uri = %artifact_uri, "fetching artifact from URI for IPFS upload");
         let resp = reqwest::get(&artifact_uri).await.map_err(internal)?;
         if !resp.status().is_success() {
-            return Err(internal(format!("fetch {} -> {}", artifact_uri, resp.status())));
+            return Err(internal(format!(
+                "fetch {} -> {}",
+                artifact_uri,
+                resp.status()
+            )));
         }
         let bytes = resp.bytes().await.map_err(internal)?.to_vec();
-        let cid = upload_bytes_to_commune_ipfs(&http_client, &ipfs_base, &ipfs_api_key_eff, &bytes, "artifact.bin")
-            .await
-            .map_err(internal)?;
+        let cid = upload_bytes_to_commune_ipfs(
+            &http_client,
+            &ipfs_base,
+            &ipfs_api_key_eff,
+            &bytes,
+            "artifact.bin",
+        )
+        .await
+        .map_err(internal)?;
         artifact_uri = format!("ipfs://{}", cid);
     }
 
@@ -809,44 +906,85 @@ async fn publish(State(state): State<ModuleApiState>, Json(req): Json<PublishReq
     };
     let json = serde_json::to_string_pretty(&md).map_err(internal)?;
 
-    let cid_md = upload_bytes_to_commune_ipfs(&http_client, &ipfs_base, &ipfs_api_key_eff, json.as_bytes(), "metadata.json")
-        .await
-        .map_err(internal)?;
+    let cid_md = upload_bytes_to_commune_ipfs(
+        &http_client,
+        &ipfs_base,
+        &ipfs_api_key_eff,
+        json.as_bytes(),
+        "metadata.json",
+    )
+    .await
+    .map_err(internal)?;
     info!(module_id = %req.module_id, metadata_cid = %cid_md, artifact_cid = %artifact_uri, "modules/publish stored metadata");
 
     let mut registered = false;
     if req.publish {
         let rpc = resolve_chain_rpc(&state, req.chain_rpc_url.clone());
-        let name = std::env::var("MODULE_API_KEY_NAME").map_err(|_| internal("MODULE_API_KEY_NAME not set"))?;
-        let password = std::env::var("MODULE_API_KEY_PASSWORD").map_err(|_| internal("MODULE_API_KEY_PASSWORD not set"))?;
+        let name = std::env::var("MODULE_API_KEY_NAME")
+            .map_err(|_| internal("MODULE_API_KEY_NAME not set"))?;
+        let password = std::env::var("MODULE_API_KEY_PASSWORD")
+            .map_err(|_| internal("MODULE_API_KEY_PASSWORD not set"))?;
         let suri_from_key = load_suri_from_keytools(&name, &password).map_err(internal)?;
-        register_on_chain(&rpc, &suri_from_key, &req.module_id, &cid_md).await.map_err(internal)?;
+        register_on_chain(&rpc, &suri_from_key, &req.module_id, &cid_md)
+            .await
+            .map_err(internal)?;
         registered = true;
     }
 
-    Ok(Json(PublishResponse { metadata_cid: cid_md, artifact_uri, registered }))
+    Ok(Json(PublishResponse {
+        metadata_cid: cid_md,
+        artifact_uri,
+        registered,
+    }))
 }
 
-async fn register(State(state): State<ModuleApiState>, Json(req): Json<RegisterRequest>) -> ApiResult<Json<RegisterResponse>> {
+async fn register(
+    State(state): State<ModuleApiState>,
+    Json(req): Json<RegisterRequest>,
+) -> ApiResult<Json<RegisterResponse>> {
     info!(module_id = %req.module_id, metadata_cid = %req.metadata_cid, "modules/register request received");
     let rpc = resolve_chain_rpc(&state, req.chain_rpc_url.clone());
     // Validate signing inputs: either both key_name & key_password, or explicit suri
     if let (Some(name), Some(password)) = (req.key_name.as_ref(), req.key_password.as_ref()) {
         let suri_from_key = load_suri_from_keytools(name, password).map_err(internal)?;
-        register_on_chain(&rpc, &suri_from_key, &req.module_id, &req.metadata_cid).await.map_err(internal)?;
+        register_on_chain(&rpc, &suri_from_key, &req.module_id, &req.metadata_cid)
+            .await
+            .map_err(internal)?;
     } else if let Some(suri) = req.suri.as_ref() {
-        register_on_chain(&rpc, suri, &req.module_id, &req.metadata_cid).await.map_err(internal)?;
+        register_on_chain(&rpc, suri, &req.module_id, &req.metadata_cid)
+            .await
+            .map_err(internal)?;
     } else {
-        return Err(ModuleApiError::bad_request("Provide either (key_name & key_password) or suri").into());
+        return Err(ModuleApiError::bad_request(
+            "Provide either (key_name & key_password) or suri",
+        )
+        .into());
     }
     Ok(Json(RegisterResponse { ok: true }))
 }
 
-async fn query(State(state): State<ModuleApiState>, Path(module_id): Path<String>, Query(q): Query<QueryParams>) -> ApiResult<Json<QueryResponse>> {
-    let api = OnlineClient::<PolkadotConfig>::from_url(&state.chain_rpc_url()).await.map_err(internal)?;
+async fn query(
+    State(state): State<ModuleApiState>,
+    Path(module_id): Path<String>,
+    Query(q): Query<QueryParams>,
+) -> ApiResult<Json<QueryResponse>> {
+    let api = OnlineClient::<PolkadotConfig>::from_url(&state.chain_rpc_url())
+        .await
+        .map_err(internal)?;
     let key = chain::decode_pubkey_from_owner(&module_id).map_err(internal)?;
-    let addr = storage("Modules", "Modules", vec![SubxtValue::from_bytes(key.to_vec())]);
-    let cid_thunk_opt = api.storage().at_latest().await.map_err(internal)?.fetch(&addr).await.map_err(internal)?;
+    let addr = storage(
+        "Modules",
+        "Modules",
+        vec![SubxtValue::from_bytes(key.to_vec())],
+    );
+    let cid_thunk_opt = api
+        .storage()
+        .at_latest()
+        .await
+        .map_err(internal)?
+        .fetch(&addr)
+        .await
+        .map_err(internal)?;
     let cid = if let Some(thunk) = cid_thunk_opt {
         let bytes: Vec<u8> = thunk.as_type::<Vec<u8>>().map_err(internal)?;
         String::from_utf8(bytes).map_err(|_| internal("CID utf8"))?
@@ -860,24 +998,42 @@ async fn query(State(state): State<ModuleApiState>, Path(module_id): Path<String
     let meta_bytes = ipfs::fetch_ipfs_bytes(&meta_uri).await.map_err(internal)?;
     let metadata_json: serde_json::Value = serde_json::from_slice(&meta_bytes).map_err(internal)?;
     if q.no_verify.unwrap_or(false) {
-        return Ok(Json(QueryResponse::Metadata { metadata: metadata_json }));
+        return Ok(Json(QueryResponse::Metadata {
+            metadata: metadata_json,
+        }));
     }
     let md = metadata::parse_metadata_v1(&meta_bytes).map_err(internal)?;
     let art_bytes = if md.artifact_uri.starts_with("ipfs://") {
-        ipfs::fetch_ipfs_bytes(&md.artifact_uri).await.map_err(internal)?
+        ipfs::fetch_ipfs_bytes(&md.artifact_uri)
+            .await
+            .map_err(internal)?
     } else if md.artifact_uri.starts_with("http://") || md.artifact_uri.starts_with("https://") {
         let resp = reqwest::get(&md.artifact_uri).await.map_err(internal)?;
-        if !resp.status().is_success() { return Err(internal(format!("artifact {} -> {}", md.artifact_uri, resp.status()))); }
+        if !resp.status().is_success() {
+            return Err(internal(format!(
+                "artifact {} -> {}",
+                md.artifact_uri,
+                resp.status()
+            )));
+        }
         resp.bytes().await.map_err(internal)?.to_vec()
     } else {
-        return Err((StatusCode::BAD_REQUEST, format!("unsupported artifact_uri: {}", md.artifact_uri)));
+        return Err((
+            StatusCode::BAD_REQUEST,
+            format!("unsupported artifact_uri: {}", md.artifact_uri),
+        ));
     };
     chain::verify_digest(&art_bytes, &md.digest).map_err(internal)?;
-    Ok(Json(QueryResponse::Metadata { metadata: metadata_json }))
+    Ok(Json(QueryResponse::Metadata {
+        metadata: metadata_json,
+    }))
 }
 
 fn internal<E: std::fmt::Display>(e: E) -> (StatusCode, String) {
-    (StatusCode::INTERNAL_SERVER_ERROR, format!("internal error: {}", e))
+    (
+        StatusCode::INTERNAL_SERVER_ERROR,
+        format!("internal error: {}", e),
+    )
 }
 
 async fn mcp_ws_upgrade(
@@ -903,7 +1059,11 @@ impl SessionEventStream {
         sessions: Arc<Mutex<HashMap<String, mpsc::Sender<Value>>>>,
         session_id: String,
     ) -> Self {
-        Self { receiver, sessions, session_id }
+        Self {
+            receiver,
+            sessions,
+            session_id,
+        }
     }
 }
 
@@ -913,25 +1073,23 @@ impl futures::Stream for SessionEventStream {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
         match Pin::new(&mut this.receiver).poll_recv(cx) {
-            Poll::Ready(Some(value)) => {
-                match serde_json::to_string(&value) {
-                    Ok(payload) => {
-                        let event = Event::default().data(payload);
-                        Poll::Ready(Some(Ok(event)))
-                    }
-                    Err(err) => {
-                        let fallback = json!({
-                            "jsonrpc": "2.0",
-                            "error": {
-                                "code": -32603,
-                                "message": format!("serialize error: {}", err),
-                            }
-                        });
-                        let event = Event::default().data(fallback.to_string());
-                        Poll::Ready(Some(Ok(event)))
-                    }
+            Poll::Ready(Some(value)) => match serde_json::to_string(&value) {
+                Ok(payload) => {
+                    let event = Event::default().data(payload);
+                    Poll::Ready(Some(Ok(event)))
                 }
-            }
+                Err(err) => {
+                    let fallback = json!({
+                        "jsonrpc": "2.0",
+                        "error": {
+                            "code": -32603,
+                            "message": format!("serialize error: {}", err),
+                        }
+                    });
+                    let event = Event::default().data(fallback.to_string());
+                    Poll::Ready(Some(Ok(event)))
+                }
+            },
             Poll::Ready(None) => {
                 if let Ok(mut sessions) = this.sessions.lock() {
                     sessions.remove(&this.session_id);
@@ -943,7 +1101,9 @@ impl futures::Stream for SessionEventStream {
     }
 }
 
-async fn mcp_sse_stream(State(state): State<ModuleApiState>) -> Sse<impl futures::Stream<Item = Result<Event, Infallible>>> {
+async fn mcp_sse_stream(
+    State(state): State<ModuleApiState>,
+) -> Sse<impl futures::Stream<Item = Result<Event, Infallible>>> {
     let session_id = Uuid::new_v4().to_string();
     let (sender, receiver) = mpsc::channel::<Value>(64);
 
@@ -961,8 +1121,7 @@ async fn mcp_sse_stream(State(state): State<ModuleApiState>) -> Sse<impl futures
 
     let stream = SessionEventStream::new(receiver, state.sse_sessions(), session_id);
 
-    Sse::new(stream)
-        .keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
+    Sse::new(stream).keep_alive(KeepAlive::new().interval(std::time::Duration::from_secs(15)))
 }
 
 async fn mcp_sse_post(
@@ -1006,27 +1165,89 @@ async fn mcp_sse_post(
                     .status(StatusCode::ACCEPTED)
                     .header(CONTENT_TYPE, "text/event-stream")
                     .body(axum::body::Body::empty())
-                    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("response build error: {}", e)))?;
+                    .map_err(|e| {
+                        (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            format!("response build error: {}", e),
+                        )
+                    })?;
                 return Ok(resp);
             }
-            info!("session {} closed during delivery, falling back to direct response", session_id);
+            info!(
+                "session {} closed during delivery, falling back to direct response",
+                session_id
+            );
         } else {
-            info!("session {} not found, falling back to direct response", session_id);
+            info!(
+                "session {} not found, falling back to direct response",
+                session_id
+            );
         }
     }
 
-    let payload = serde_json::to_string(&response)
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("encode response: {}", e)))?;
+    let prefers_json = headers
+        .get(ACCEPT)
+        .and_then(|v| v.to_str().ok())
+        .map(|value| {
+            let mut has_json = false;
+            let mut has_sse = false;
+            for item in value.split(',') {
+                let trimmed = item.trim();
+                if trimmed.starts_with("application/json") {
+                    has_json = true;
+                }
+                if trimmed.contains("text/event-stream") {
+                    has_sse = true;
+                }
+            }
+            has_json && !has_sse
+        })
+        .unwrap_or(false);
+
+    if prefers_json {
+        let body = serde_json::to_vec(&response).map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("encode response: {}", e),
+            )
+        })?;
+        let resp = Response::builder()
+            .status(StatusCode::OK)
+            .header(CONTENT_TYPE, "application/json")
+            .body(axum::body::Body::from(body))
+            .map_err(|e| {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("response build error: {}", e),
+                )
+            })?;
+        return Ok(resp);
+    }
+
+    let payload = serde_json::to_string(&response).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("encode response: {}", e),
+        )
+    })?;
     let body = format!("data: {}\n\n", payload);
     let resp = Response::builder()
         .status(StatusCode::OK)
         .header(CONTENT_TYPE, "text/event-stream")
         .body(axum::body::Body::from(body))
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("response build error: {}", e)))?;
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("response build error: {}", e),
+            )
+        })?;
     Ok(resp)
 }
 
-fn extract_session_context(headers: &HeaderMap, payload: &Value) -> Result<(Option<String>, Value), (StatusCode, String)> {
+fn extract_session_context(
+    headers: &HeaderMap,
+    payload: &Value,
+) -> Result<(Option<String>, Value), (StatusCode, String)> {
     if let Some(obj) = payload.as_object() {
         if let (Some(session_id), Some(frame)) = (
             obj.get("session_id").and_then(|v| v.as_str()),
@@ -1039,7 +1260,12 @@ fn extract_session_context(headers: &HeaderMap, payload: &Value) -> Result<(Opti
     if let Some(header_val) = headers.get("x-mcp-session") {
         let session_id = header_val
             .to_str()
-            .map_err(|e| (StatusCode::BAD_REQUEST, format!("invalid X-MCP-Session header: {}", e)))?
+            .map_err(|e| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    format!("invalid X-MCP-Session header: {}", e),
+                )
+            })?
             .to_string();
         return Ok((Some(session_id), payload.clone()));
     }
@@ -1047,7 +1273,10 @@ fn extract_session_context(headers: &HeaderMap, payload: &Value) -> Result<(Opti
     Ok((None, payload.clone()))
 }
 
-async fn handle_mcp_websocket(socket: WebSocket, state: ModuleApiState) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn handle_mcp_websocket(
+    socket: WebSocket,
+    state: ModuleApiState,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let (mut sender, mut receiver) = socket.split();
 
     while let Some(msg_result) = receiver.next().await {
@@ -1098,7 +1327,10 @@ async fn handle_mcp_websocket(socket: WebSocket, state: ModuleApiState) -> Resul
     Ok(())
 }
 
-async fn handle_mcp_request(state: &ModuleApiState, frame: JsonRpcFrame) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+async fn handle_mcp_request(
+    state: &ModuleApiState,
+    frame: JsonRpcFrame,
+) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
     let method = frame.method.clone();
     let dispatcher = state.dispatcher();
 
@@ -1134,18 +1366,30 @@ async fn handle_mcp_request(state: &ModuleApiState, frame: JsonRpcFrame) -> Resu
     }
 }
 
-async fn upload_bytes_to_commune_ipfs(client: &Client, base: &str, api_key: &Option<String>, bytes: &[u8], filename: &str) -> Result<String, Box<dyn std::error::Error>> {
+async fn upload_bytes_to_commune_ipfs(
+    client: &Client,
+    base: &str,
+    api_key: &Option<String>,
+    bytes: &[u8],
+    filename: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
     let base_trim = base.trim_end_matches('/');
     let url_upload = format!("{}/files/upload", base_trim);
     let part = Part::bytes(bytes.to_vec()).file_name(filename.to_string());
     let form = Form::new().part("file", part);
     let mut req = client.post(&url_upload).multipart(form);
-    let api_key_eff = api_key.clone().or_else(|| std::env::var("IPFS_API_KEY").ok());
-    if let Some(key) = api_key_eff.clone() { req = req.header("X-API-Key", key); }
+    let api_key_eff = api_key
+        .clone()
+        .or_else(|| std::env::var("IPFS_API_KEY").ok());
+    if let Some(key) = api_key_eff.clone() {
+        req = req.header("X-API-Key", key);
+    }
     let resp = req.send().await?;
     if resp.status().is_success() {
         let v: serde_json::Value = resp.json().await?;
-        if let Some(cid) = v.get("cid").and_then(|x| x.as_str()) { return Ok(cid.to_string()); }
+        if let Some(cid) = v.get("cid").and_then(|x| x.as_str()) {
+            return Ok(cid.to_string());
+        }
         // Fall through if response shape differs
     }
 
@@ -1167,10 +1411,16 @@ async fn upload_bytes_to_commune_ipfs(client: &Client, base: &str, api_key: &Opt
     Ok(cid.to_string())
 }
 
-async fn register_on_chain(rpc: &str, suri: &str, module_id: &str, metadata_cid: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn register_on_chain(
+    rpc: &str,
+    suri: &str,
+    module_id: &str,
+    metadata_cid: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let api = OnlineClient::<PolkadotConfig>::from_url(rpc).await?;
-    let kp = sr25519::Keypair::from_uri(&SecretUri::from_str(suri).map_err(|e| format!("suri: {}", e))?)
-        .map_err(|e| format!("suri: {}", e))?;
+    let kp =
+        sr25519::Keypair::from_uri(&SecretUri::from_str(suri).map_err(|e| format!("suri: {}", e))?)
+            .map_err(|e| format!("suri: {}", e))?;
     let key = chain::decode_pubkey_from_owner(module_id)?;
     let call = tx(
         "Modules",
@@ -1180,7 +1430,12 @@ async fn register_on_chain(rpc: &str, suri: &str, module_id: &str, metadata_cid:
             SubxtValue::from_bytes(metadata_cid.as_bytes().to_vec()),
         ],
     );
-    let mut progress = api.tx().sign_and_submit_then_watch_default(&call, &kp).await?;
-    while let Some(s) = progress.next().await { let _ = s?; }
+    let mut progress = api
+        .tx()
+        .sign_and_submit_then_watch_default(&call, &kp)
+        .await?;
+    while let Some(s) = progress.next().await {
+        let _ = s?;
+    }
     Ok(())
 }

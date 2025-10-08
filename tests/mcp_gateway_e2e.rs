@@ -1,4 +1,4 @@
-use std::io::{Write, Read};
+use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 
 #[test]
@@ -30,7 +30,11 @@ fn mcp_initialize_list_call_echo() {
     let mut buf = String::new();
     stdout.read_to_string(&mut buf).unwrap();
     let lines: Vec<&str> = buf.lines().collect();
-    assert!(lines.len() >= 3, "expected at least 3 responses, got {}", lines.len());
+    assert!(
+        lines.len() >= 3,
+        "expected at least 3 responses, got {}",
+        lines.len()
+    );
 
     let init: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
     assert_eq!(init["jsonrpc"], "2.0");
@@ -49,4 +53,3 @@ fn mcp_initialize_list_call_echo() {
     let content = call["result"]["content"].as_array().unwrap();
     assert_eq!(content[0]["text"], "hello mcp");
 }
-

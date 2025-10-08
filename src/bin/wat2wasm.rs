@@ -1,8 +1,11 @@
-use std::path::PathBuf;
 use clap::Parser;
+use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
-#[command(name = "wat2wasm", about = "Convert a .wat text module to a .wasm binary")]
+#[command(
+    name = "wat2wasm",
+    about = "Convert a .wat text module to a .wasm binary"
+)]
 struct Args {
     /// Input .wat file
     in_wat: PathBuf,
@@ -17,4 +20,3 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     eprintln!("Wrote {}", args.out_wasm.display());
     Ok(())
 }
-

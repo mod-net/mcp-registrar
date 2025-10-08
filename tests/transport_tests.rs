@@ -1,11 +1,11 @@
-use mcp_registrar::transport::{McpServer, HandlerResult};
-use mcp_registrar::transport::stdio_transport::StdioTransportServer;
-use std::io;
-use std::sync::Arc;
 use async_trait::async_trait;
-use tokio::sync::Mutex;
-use tokio::io::{AsyncRead, AsyncWrite, AsyncBufRead};
+use mcp_registrar::transport::stdio_transport::StdioTransportServer;
+use mcp_registrar::transport::{HandlerResult, McpServer};
+use std::io;
 use std::pin::Pin;
+use std::sync::Arc;
+use tokio::io::{AsyncBufRead, AsyncRead, AsyncWrite};
+use tokio::sync::Mutex;
 
 // A mock McpServer implementation for testing
 #[derive(Clone)]
@@ -79,10 +79,10 @@ impl AsyncRead for MockStdio {
     ) -> std::task::Poll<io::Result<()>> {
         let input = self.input.clone();
         let current_line = self.current_line.clone();
-        
+
         futures::executor::block_on(async move {
             let mut line_guard = current_line.lock().await;
-            
+
             // If we don't have a current line, get one from input
             if line_guard.is_none() {
                 let mut inputs = input.lock().await;
@@ -91,21 +91,21 @@ impl AsyncRead for MockStdio {
                     inputs.remove(0);
                 }
             }
-            
+
             // Copy data from the current line to the buffer
             if let Some(line) = line_guard.as_mut() {
                 let remaining = buf.remaining();
                 let to_copy = std::cmp::min(remaining, line.len());
                 buf.put_slice(&line[..to_copy]);
                 line.drain(..to_copy);
-                
+
                 // If we've consumed the entire line, clear it
                 if line.is_empty() {
                     *line_guard = None;
                 }
             }
         });
-        
+
         std::task::Poll::Ready(Ok(()))
     }
 }
@@ -118,13 +118,13 @@ impl AsyncWrite for MockStdio {
     ) -> std::task::Poll<io::Result<usize>> {
         let output = self.output.clone();
         let data = buf.to_vec();
-        
+
         futures::executor::block_on(async move {
             let mut outputs = output.lock().await;
             let output_str = String::from_utf8_lossy(&data).to_string();
             outputs.push(output_str);
         });
-        
+
         std::task::Poll::Ready(Ok(buf.len()))
     }
 
@@ -150,15 +150,15 @@ impl AsyncBufRead for MockStdio {
     ) -> std::task::Poll<Result<&'a [u8], std::io::Error>> {
         let input = self.input.clone();
         let current_line = self.current_line.clone();
-        
+
         // Use a static buffer to avoid lifetime issues
         // This is a bit of a hack, but it works for our test
         static mut BUFFER: [u8; 1024] = [0; 1024];
         static mut BUFFER_LEN: usize = 0;
-        
+
         futures::executor::block_on(async move {
             let mut line_guard = current_line.lock().await;
-            
+
             // If we don't have a current line, get one from input
             if line_guard.is_none() {
                 let mut inputs = input.lock().await;
@@ -167,7 +167,7 @@ impl AsyncBufRead for MockStdio {
                     inputs.remove(0);
                 }
             }
-            
+
             // Return the current line if we have one
             if let Some(line) = line_guard.as_ref() {
                 // Copy the line to our static buffer
@@ -186,10 +186,7 @@ impl AsyncBufRead for MockStdio {
         })
     }
 
-    fn consume(
-        self: Pin<&mut Self>,
-        amt: usize,
-    ) {
+    fn consume(self: Pin<&mut Self>, amt: usize) {
         let current_line = self.current_line.clone();
         futures::executor::block_on(async move {
             let mut line_guard = current_line.lock().await;
@@ -210,30 +207,35 @@ impl AsyncBufRead for MockStdio {
 async fn test_stdio_transport_basic_flow() {
     // Setup a mock McpServer
     let server = MockMcpServer::new();
-    
+
     // Configure mock responses
-    server.add_response("hello", serde_json::json!("world")).await;
-    
+    server
+        .add_response("hello", serde_json::json!("world"))
+        .await;
+
     // Create a transport wrapper
     let transport = StdioTransportServer::new(server.clone());
-    
+
     // Mock the IO by sending a request
     let request = r#"{"method": "hello", "params": {"name": "test"}}"#;
     let mock_input = vec![request.to_string()];
     let mut mock_stdio = MockStdio::new(mock_input);
     let mut mock_stdio_clone = mock_stdio.clone();
-    
+
     // Run the transport with mocked IO
     let transport_future = transport.serve_with_io(&mut mock_stdio, &mut mock_stdio_clone);
-    tokio::time::timeout(std::time::Duration::from_millis(100), transport_future).await.unwrap().unwrap();
-    
+    tokio::time::timeout(std::time::Duration::from_millis(100), transport_future)
+        .await
+        .unwrap()
+        .unwrap();
+
     // Verify the request was processed by checking that our mock server received the call
     let calls = server.get_calls().await;
     println!("Server calls: {:?}", calls);
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].0, "hello");
     assert_eq!(calls[0].1, serde_json::json!({"name": "test"}));
-    
+
     // Verify the response
     let output = mock_stdio.get_output().await;
     println!("Mock stdio output: {:?}", output);
@@ -253,4 +255,4 @@ async fn test_stdio_transport_invalid_json() {
 async fn test_stdio_transport_unknown_method() {
     // Call a method that isn't registered in the mock
     // Verify the error response is correctly formatted
-} 
+}

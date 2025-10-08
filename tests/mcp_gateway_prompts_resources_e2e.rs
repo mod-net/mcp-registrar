@@ -1,4 +1,4 @@
-use std::io::{Write, Read};
+use std::io::{Read, Write};
 use std::process::{Command, Stdio};
 
 #[test]
@@ -19,13 +19,19 @@ fn mcp_prompts_and_resources_list_empty_ok() {
         r#"{"jsonrpc":"2.0","id":2,"method":"prompts/list","params":{}}"#,
         r#"{"jsonrpc":"2.0","id":3,"method":"resources/list","params":{}}"#,
     ];
-    for f in frames { writeln!(stdin, "{}", f).unwrap(); }
+    for f in frames {
+        writeln!(stdin, "{}", f).unwrap();
+    }
     drop(stdin);
 
     let mut buf = String::new();
     stdout.read_to_string(&mut buf).unwrap();
     let lines: Vec<&str> = buf.lines().collect();
-    assert!(lines.len() >= 3, "expected at least 3 responses, got {}", lines.len());
+    assert!(
+        lines.len() >= 3,
+        "expected at least 3 responses, got {}",
+        lines.len()
+    );
 
     // prompts/list
     let prompts: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
@@ -39,4 +45,3 @@ fn mcp_prompts_and_resources_list_empty_ok() {
     assert_eq!(resources["id"], 3);
     assert!(resources["result"]["resources"].is_array());
 }
-

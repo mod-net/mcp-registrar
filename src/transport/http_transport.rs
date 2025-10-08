@@ -94,7 +94,11 @@ async fn handle_rpc<S: McpServer>(
     Json(payload): Json<JsonRpcRequest>,
 ) -> impl IntoResponse {
     if payload.method.is_empty() {
-        let body = Json(build_error_response(&payload.id, -32600, "Invalid Request: missing method"));
+        let body = Json(build_error_response(
+            &payload.id,
+            -32600,
+            "Invalid Request: missing method",
+        ));
         return (StatusCode::BAD_REQUEST, body);
     }
 

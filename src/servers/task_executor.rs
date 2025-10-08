@@ -693,7 +693,12 @@ mod tests {
     use crate::servers::tool_invoker::ToolInvoker;
     struct DummyInvoker;
     impl ToolInvoker for DummyInvoker {
-        fn new() -> Self where Self: Sized { Self }
+        fn new() -> Self
+        where
+            Self: Sized,
+        {
+            Self
+        }
         fn invoke_tool(
             &self,
             _name: String,
@@ -744,7 +749,10 @@ fn lock_with_timeout<'a, T>(mutex: &'a Mutex<T>, msg: &str) -> MutexGuard<'a, T>
             return guard;
         }
         if start.elapsed() > StdDuration::from_millis(100) {
-            warn!("[LOCK TIMEOUT] {} after 100ms; falling back to blocking lock", msg);
+            warn!(
+                "[LOCK TIMEOUT] {} after 100ms; falling back to blocking lock",
+                msg
+            );
             return mutex.lock().unwrap();
         }
         std::thread::sleep(StdDuration::from_millis(1));

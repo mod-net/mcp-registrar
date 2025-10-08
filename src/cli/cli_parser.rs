@@ -66,7 +66,7 @@ pub enum Command {
         version: String,
 
         /// Description
-        #[arg(long, default_value = "")] 
+        #[arg(long, default_value = "")]
         description: String,
 
         /// Categories (comma-separated)
@@ -78,7 +78,7 @@ pub enum Command {
         deps: String,
 
         /// Extra uv args (space separated), only for python-uv-script
-        #[arg(long, default_value = "")] 
+        #[arg(long, default_value = "")]
         uv_args: String,
 
         /// Command path for binary runtime

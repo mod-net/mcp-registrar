@@ -1,19 +1,25 @@
+use base64::{engine::general_purpose, Engine as _};
 use clap::Parser;
+use mcp_registrar::config::env;
+use mcp_registrar::utils::chain;
+use reqwest::blocking::{
+    multipart::{Form, Part},
+    Client,
+};
+use schnorrkel::{signing_context, Keypair, MiniSecretKey};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::PathBuf;
-use base64::{engine::general_purpose, Engine as _};
-use schnorrkel::{signing_context, Keypair, MiniSecretKey};
-use subxt::{config::PolkadotConfig, OnlineClient};
-use subxt::dynamic::{tx, Value};
-use subxt_signer::{sr25519, SecretUri};
 use std::str::FromStr;
-use reqwest::blocking::{Client, multipart::{Form, Part}};
-use mcp_registrar::utils::chain;
-use mcp_registrar::config::env;
+use subxt::dynamic::{tx, Value};
+use subxt::{config::PolkadotConfig, OnlineClient};
+use subxt_signer::{sr25519, SecretUri};
 
 #[derive(Parser, Debug)]
-#[command(name = "publish-module", about = "Generate signed module metadata (v1)")]
+#[command(
+    name = "publish-module",
+    about = "Generate signed module metadata (v1)"
+)]
 struct Args {
     /// Path to artifact bytes (e.g., wasm)
     #[arg(long)]
@@ -24,7 +30,7 @@ struct Args {
     module_id: String,
 
     /// Mini secret seed as 64 hex chars (sr25519)
-    #[arg(long, value_name = "HEX32")] 
+    #[arg(long, value_name = "HEX32")]
     secret_hex: String,
 
     /// Artifact URI to embed in metadata (e.g., ipfs://<cid>)
@@ -62,11 +68,15 @@ struct Args {
 
 fn hex_to_bytes(s: &str) -> Result<Vec<u8>, String> {
     let mut t = s.trim();
-    if t.starts_with("0x") || t.starts_with("0X") { t = &t[2..]; }
-    if t.len() % 2 != 0 { return Err("hex length must be even".into()); }
+    if t.starts_with("0x") || t.starts_with("0X") {
+        t = &t[2..];
+    }
+    if t.len() % 2 != 0 {
+        return Err("hex length must be even".into());
+    }
     (0..t.len())
         .step_by(2)
-        .map(|i| u8::from_str_radix(&t[i..i+2], 16).map_err(|e| e.to_string()))
+        .map(|i| u8::from_str_radix(&t[i..i + 2], 16).map_err(|e| e.to_string()))
         .collect()
 }
 
@@ -89,7 +99,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         secret_hex_input = secret_hex_input[..64].to_string();
     }
     let seed = hex_to_bytes(&secret_hex_input).map_err(|e| format!("secret_hex: {}", e))?;
-    if seed.len() != 32 { return Err("secret_hex must be 32 bytes (64 hex chars)".into()); }
+    if seed.len() != 32 {
+        return Err("secret_hex must be 32 bytes (64 hex chars)".into());
+    }
     let mini = MiniSecretKey::from_bytes(&seed).map_err(|e| format!("mini secret: {}", e))?;
     let kp: Keypair = mini.expand_to_keypair(schnorrkel::ExpansionMode::Ed25519);
     let ctx = signing_context(b"module_digest");
@@ -141,10 +153,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .clone()
             .or_else(|| env::ipfs_api_url())
             .ok_or("Set --ipfs-base or IPFS_API_URL for publish")?;
-        let cid_md = upload_bytes_to_commune_ipfs(&ipfs_base, &args.ipfs_api_key, json.as_bytes(), "metadata.json")?;
+        let cid_md = upload_bytes_to_commune_ipfs(
+            &ipfs_base,
+            &args.ipfs_api_key,
+            json.as_bytes(),
+            "metadata.json",
+        )?;
 
         // 3) Register on chain
-        let rpc = args.chain_rpc_url.or_else(|| Some(env::chain_rpc_url()))
+        let rpc = args
+            .chain_rpc_url
+            .or_else(|| Some(env::chain_rpc_url()))
             .ok_or("Set --chain-rpc-url or CHAIN_RPC_URL for publish")?;
         register_on_chain(&rpc, &args.suri, &args.module_id, &cid_md)?;
         println!("Registered module: {} -> {}", args.module_id, cid_md);
@@ -160,13 +179,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
-fn upload_to_commune_ipfs(base: &str, api_key: &Option<String>, path: &PathBuf) -> Result<String, Box<dyn std::error::Error>> {
-    let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("artifact.bin").to_string();
+fn upload_to_commune_ipfs(
+    base: &str,
+    api_key: &Option<String>,
+    path: &PathBuf,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let file_name = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("artifact.bin")
+        .to_string();
     let bytes = fs::read(path)?;
     upload_bytes_to_commune_ipfs(base, api_key, &bytes, &file_name)
 }
 
-fn upload_bytes_to_commune_ipfs(base: &str, api_key: &Option<String>, bytes: &[u8], filename: &str) -> Result<String, Box<dyn std::error::Error>> {
+fn upload_bytes_to_commune_ipfs(
+    base: &str,
+    api_key: &Option<String>,
+    bytes: &[u8],
+    filename: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
     let client = Client::builder().build()?;
     // Try FastAPI style first: POST /files/upload
     let base_trim = base.trim_end_matches('/');
@@ -174,12 +206,18 @@ fn upload_bytes_to_commune_ipfs(base: &str, api_key: &Option<String>, bytes: &[u
     let part = Part::bytes(bytes.to_vec()).file_name(filename.to_string());
     let form = Form::new().part("file", part);
     let mut req = client.post(&url_upload).multipart(form);
-    let api_key_eff = api_key.clone().or_else(|| std::env::var("IPFS_API_KEY").ok());
-    if let Some(key) = api_key_eff.clone() { req = req.header("X-API-Key", key); }
+    let api_key_eff = api_key
+        .clone()
+        .or_else(|| std::env::var("IPFS_API_KEY").ok());
+    if let Some(key) = api_key_eff.clone() {
+        req = req.header("X-API-Key", key);
+    }
     let resp = req.send()?;
     if resp.status().is_success() {
         let v: serde_json::Value = resp.json()?;
-        if let Some(cid) = v.get("cid").and_then(|x| x.as_str()) { return Ok(cid.to_string()); }
+        if let Some(cid) = v.get("cid").and_then(|x| x.as_str()) {
+            return Ok(cid.to_string());
+        }
         // fallthrough to kubo if shape unexpected
     }
     // Fallback to Kubo RPC: POST /api/v0/add?pin=true
@@ -187,25 +225,50 @@ fn upload_bytes_to_commune_ipfs(base: &str, api_key: &Option<String>, bytes: &[u
     let part = Part::bytes(bytes.to_vec()).file_name(filename.to_string());
     let form = Form::new().part("file", part);
     let resp = client.post(&url_add).multipart(form).send()?;
-    if !resp.status().is_success() { return Err(format!("kubo add {} -> {}", url_add, resp.status()).into()); }
+    if !resp.status().is_success() {
+        return Err(format!("kubo add {} -> {}", url_add, resp.status()).into());
+    }
     // Kubo returns JSON (text/plain); parse first line
     let text = resp.text()?;
     let first = text.lines().next().unwrap_or("");
-    let v: serde_json::Value = serde_json::from_str(first).map_err(|e| format!("parse kubo add: {} | body: {}", e, first))?;
-    let cid = v.get("Hash").and_then(|x| x.as_str()).ok_or("missing Hash in kubo add response")?;
+    let v: serde_json::Value = serde_json::from_str(first)
+        .map_err(|e| format!("parse kubo add: {} | body: {}", e, first))?;
+    let cid = v
+        .get("Hash")
+        .and_then(|x| x.as_str())
+        .ok_or("missing Hash in kubo add response")?;
     Ok(cid.to_string())
 }
 
-fn register_on_chain(rpc: &str, suri: &str, module_id: &str, metadata_cid: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn register_on_chain(
+    rpc: &str,
+    suri: &str,
+    module_id: &str,
+    metadata_cid: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let rt = tokio::runtime::Runtime::new()?;
     rt.block_on(async move {
         let api = OnlineClient::<PolkadotConfig>::from_url(rpc).await?;
-        let kp = sr25519::Keypair::from_uri(&SecretUri::from_str(suri).map_err(|e| format!("suri: {}", e))?)
-            .map_err(|e| format!("suri: {}", e))?;
+        let kp = sr25519::Keypair::from_uri(
+            &SecretUri::from_str(suri).map_err(|e| format!("suri: {}", e))?,
+        )
+        .map_err(|e| format!("suri: {}", e))?;
         let key = chain::decode_pubkey_from_owner(module_id)?;
-        let call = tx("Modules", "register_module", vec![Value::from_bytes(key.to_vec()), Value::from_bytes(metadata_cid.as_bytes().to_vec())]);
-        let mut progress = api.tx().sign_and_submit_then_watch_default(&call, &kp).await?;
-        while let Some(s) = progress.next().await { let _ = s?; }
+        let call = tx(
+            "Modules",
+            "register_module",
+            vec![
+                Value::from_bytes(key.to_vec()),
+                Value::from_bytes(metadata_cid.as_bytes().to_vec()),
+            ],
+        );
+        let mut progress = api
+            .tx()
+            .sign_and_submit_then_watch_default(&call, &kp)
+            .await?;
+        while let Some(s) = progress.next().await {
+            let _ = s?;
+        }
         Ok::<(), Box<dyn std::error::Error>>(())
     })
 }

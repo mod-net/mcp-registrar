@@ -1,7 +1,7 @@
-use mcp_registrar::utils::tool_storage::{FileToolStorage, ToolStorage};
 use mcp_registrar::models::tool::Tool;
-use tempfile::tempdir;
+use mcp_registrar::utils::tool_storage::{FileToolStorage, ToolStorage};
 use std::path::PathBuf;
+use tempfile::tempdir;
 
 #[tokio::test]
 async fn atomic_save_and_read_back() {
@@ -26,4 +26,3 @@ async fn atomic_save_and_read_back() {
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].id, "t1");
 }
-

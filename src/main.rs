@@ -22,6 +22,70 @@ use mcp_registrar::TaskMetricsCollector;
 use std::fs;
 use std::io::{self, BufRead};
 
+fn payload_from_plain_registry_command(input: &str) -> Result<serde_json::Value, String> {
+    let trimmed = input.trim();
+
+    if trimmed.is_empty() {
+        let mut args_map = serde_json::Map::new();
+        args_map.insert("action".into(), serde_json::Value::String("list".into()));
+        let mut payload_map = serde_json::Map::new();
+        payload_map.insert("arguments".into(), serde_json::Value::Object(args_map));
+        return Ok(serde_json::Value::Object(payload_map));
+    }
+
+    let (action_raw, remainder) = trimmed
+        .split_once(char::is_whitespace)
+        .map(|(a, rest)| (a, rest.trim_start()))
+        .unwrap_or((trimmed, ""));
+
+    let action = action_raw.to_ascii_lowercase();
+    let mut args_map = serde_json::Map::new();
+    args_map.insert("action".into(), serde_json::Value::String(action.clone()));
+
+    match action.as_str() {
+        "list" | "list_tools" => {
+            if !remainder.is_empty() {
+                return Err(format!("unexpected input after `{}`", action));
+            }
+        }
+        "invoke" | "call" => {
+            if remainder.is_empty() {
+                return Err(format!("missing tool name for `{}`", action));
+            }
+            let (name_raw, args_str) = remainder
+                .split_once(char::is_whitespace)
+                .map(|(n, rest)| (n, rest.trim_start()))
+                .unwrap_or((remainder, ""));
+
+            if name_raw.is_empty() {
+                return Err(format!("missing tool name for `{}`", action));
+            }
+
+            args_map.insert(
+                "name".into(),
+                serde_json::Value::String(name_raw.to_string()),
+            );
+
+            let arguments_value = if args_str.is_empty() {
+                serde_json::Value::Object(serde_json::Map::new())
+            } else {
+                serde_json::from_str(args_str).map_err(|err| {
+                    format!("failed to parse arguments JSON for `{}`: {}", action, err)
+                })?
+            };
+
+            args_map.insert("arguments".into(), arguments_value);
+        }
+        other => {
+            return Err(format!("unsupported action `{}`", other));
+        }
+    }
+
+    let mut payload_map = serde_json::Map::new();
+    payload_map.insert("arguments".into(), serde_json::Value::Object(args_map));
+    Ok(serde_json::Value::Object(payload_map))
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging
@@ -353,7 +417,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .split(|c| c == ',' || c == ' ')
                         .filter(|s| !s.is_empty())
                         .collect();
-                    let mut header = String::from("# /// script\n# requires-python = \">=3.10\"\n# dependencies = [\n");
+                    let mut header = String::from(
+                        "# /// script\n# requires-python = \">=3.10\"\n# dependencies = [\n",
+                    );
                     for d in &deps_list {
                         header.push_str(&format!("#   \"{}\",\n", d));
                     }
@@ -378,14 +444,22 @@ if __name__ == "__main__":
 
                     // entry
                     let mut entry = serde_json::Map::new();
-                    entry.insert("script".into(), serde_json::Value::String(script_path.to_string_lossy().into_owned()));
+                    entry.insert(
+                        "script".into(),
+                        serde_json::Value::String(script_path.to_string_lossy().into_owned()),
+                    );
                     let uv: Vec<String> = uv_args
                         .split(' ')
                         .filter(|s| !s.is_empty())
                         .map(|s| s.to_string())
                         .collect();
                     if !uv.is_empty() {
-                        entry.insert("uv_args".into(), serde_json::Value::Array(uv.into_iter().map(serde_json::Value::String).collect()));
+                        entry.insert(
+                            "uv_args".into(),
+                            serde_json::Value::Array(
+                                uv.into_iter().map(serde_json::Value::String).collect(),
+                            ),
+                        );
                     }
                     manifest["entry"] = serde_json::Value::Object(entry);
                 }
@@ -462,20 +536,35 @@ if __name__ == "__main__":
                         let mut py = template.to_string();
                         py = py.replace("__CMD__", &serde_json::to_string(&command)?);
                         py = py.replace("__DARGS__", &serde_json::to_string(&default_args)?);
-                        py = py.replace("__ARG_STYLE__", &serde_json::to_string(&adapter_arg_style)?);
+                        py = py
+                            .replace("__ARG_STYLE__", &serde_json::to_string(&adapter_arg_style)?);
                         py = py.replace("__MODE__", &serde_json::to_string(&adapter_mode)?);
                         fs::write(&adapter_path, py)?;
 
                         let mut entry = serde_json::Map::new();
-                        entry.insert("command".into(), serde_json::Value::String("python3".to_string()));
-                        entry.insert("args".into(), serde_json::json!([adapter_path.to_string_lossy()]));
+                        entry.insert(
+                            "command".into(),
+                            serde_json::Value::String("python3".to_string()),
+                        );
+                        entry.insert(
+                            "args".into(),
+                            serde_json::json!([adapter_path.to_string_lossy()]),
+                        );
                         manifest["entry"] = serde_json::Value::Object(entry);
                     } else {
                         // No adapter, run the binary directly
                         let mut entry = serde_json::Map::new();
                         entry.insert("command".into(), serde_json::Value::String(command.clone()));
                         if !default_args.is_empty() {
-                            entry.insert("args".into(), serde_json::Value::Array(default_args.into_iter().map(serde_json::Value::String).collect()));
+                            entry.insert(
+                                "args".into(),
+                                serde_json::Value::Array(
+                                    default_args
+                                        .into_iter()
+                                        .map(serde_json::Value::String)
+                                        .collect(),
+                                ),
+                            );
                         }
                         manifest["entry"] = serde_json::Value::Object(entry);
                     }
@@ -498,7 +587,12 @@ if __name__ == "__main__":
             // Initialize in-process tool registry
             let registry = ToolRegistryServer::new();
             if let Err(e) = registry.initialize().await {
-                eprintln!("{}", serde_json::to_string(&json!({"isError": true, "error": format!("init failed: {}", e)}))?);
+                eprintln!(
+                    "{}",
+                    serde_json::to_string(
+                        &json!({"isError": true, "error": format!("init failed: {}", e)})
+                    )?
+                );
                 return Ok(());
             }
 
@@ -508,24 +602,41 @@ if __name__ == "__main__":
             let _ = stdin.lock().read_line(&mut line);
             let payload: serde_json::Value = match serde_json::from_str(line.trim()) {
                 Ok(v) => v,
-                Err(e) => {
-                    println!("{}", serde_json::to_string(&json!({"isError": true, "error": format!("invalid JSON: {}", e)}))?);
-                    return Ok(());
-                }
+                Err(json_err) => match payload_from_plain_registry_command(line.trim()) {
+                    Ok(v) => v,
+                    Err(parse_err) => {
+                        println!(
+                            "{}",
+                            serde_json::to_string(&json!({
+                                "isError": true,
+                                "error": format!(
+                                    "invalid command: {}; json parse error: {}",
+                                    parse_err,
+                                    json_err
+                                )
+                            }))?
+                        );
+                        return Ok(());
+                    }
+                },
             };
             let args = payload.get("arguments").cloned().unwrap_or(json!({}));
-            let action = args.get("action").and_then(|v| v.as_str()).unwrap_or("list");
+            let action = args
+                .get("action")
+                .and_then(|v| v.as_str())
+                .unwrap_or("list");
 
             match action {
-                "list" | "list_tools" => {
-                    match registry.handle("ListTools", json!({})).await {
-                        Ok(res) => {
-                            let tools = res.get("tools").cloned().unwrap_or(json!([]));
-                            println!("{}", serde_json::to_string(&json!({"tools": tools}))?);
-                        }
-                        Err(e) => println!("{}", serde_json::to_string(&json!({"isError": true, "error": e.to_string()}))?),
+                "list" | "list_tools" => match registry.handle("ListTools", json!({})).await {
+                    Ok(res) => {
+                        let tools = res.get("tools").cloned().unwrap_or(json!([]));
+                        println!("{}", serde_json::to_string(&json!({"tools": tools}))?);
                     }
-                }
+                    Err(e) => println!(
+                        "{}",
+                        serde_json::to_string(&json!({"isError": true, "error": e.to_string()}))?
+                    ),
+                },
                 "invoke" | "call" => {
                     let name = args.get("name").and_then(|v| v.as_str()).unwrap_or("");
                     let parameters = args.get("arguments").cloned().unwrap_or(json!({}));
@@ -533,14 +644,28 @@ if __name__ == "__main__":
                     match registry.handle("InvokeTool", req).await {
                         Ok(res) => {
                             // Return the underlying tool result if present
-                            let out = res.get("result").and_then(|r| r.get("result")).cloned().unwrap_or(json!({}));
+                            let out = res
+                                .get("result")
+                                .and_then(|r| r.get("result"))
+                                .cloned()
+                                .unwrap_or(json!({}));
                             println!("{}", serde_json::to_string(&out)?);
                         }
-                        Err(e) => println!("{}", serde_json::to_string(&json!({"isError": true, "error": e.to_string()}))?),
+                        Err(e) => println!(
+                            "{}",
+                            serde_json::to_string(
+                                &json!({"isError": true, "error": e.to_string()})
+                            )?
+                        ),
                     }
                 }
                 other => {
-                    println!("{}", serde_json::to_string(&json!({"isError": true, "error": format!("unknown action: {}", other)}))?);
+                    println!(
+                        "{}",
+                        serde_json::to_string(
+                            &json!({"isError": true, "error": format!("unknown action: {}", other)})
+                        )?
+                    );
                 }
             }
         }

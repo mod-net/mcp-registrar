@@ -1,16 +1,13 @@
 use crate::models::tool::{Tool, ToolInvocation, ToolInvocationResult};
+use crate::servers::mcp_registrar::RegisterServerResponse as RegistrarRegisterServerResponse;
+use crate::servers::tool_runtime::executors::{process::ProcessExecutor, wasm::WasmExecutor};
+use crate::servers::tool_runtime::{self, manifest, Executor, Policy, ToolRuntime};
 use crate::transport::{HandlerResult, McpServer};
 use crate::utils::tool_storage::{FileToolStorage, ToolStorage};
-use crate::servers::tool_runtime::{self, manifest, Executor, Policy, ToolRuntime};
-use crate::servers::tool_runtime::executors::{process::ProcessExecutor, wasm::WasmExecutor};
 use anyhow::Result;
-use crate::servers::mcp_registrar::RegisterServerResponse as RegistrarRegisterServerResponse;
 use async_trait::async_trait;
 use chrono::Utc;
-use serde::{
-    de::Deserializer,
-    Serialize, Serializer, Deserialize,
-};
+use serde::{de::Deserializer, Deserialize, Serialize, Serializer};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -133,9 +130,9 @@ impl<'de> Deserialize<'de> for ToolRegistryServer {
         D: Deserializer<'de>,
     {
         let data = ToolRegistryServerData::deserialize(deserializer)?;
-        
+
         let tools = Arc::new(FileToolStorage::new(data.tools_path.clone()));
-        
+
         Ok(ToolRegistryServer {
             tools: tools.clone() as Arc<dyn ToolStorage>,
             registered_servers: Arc::new(TokioMutex::new(Vec::new())),
@@ -195,12 +192,22 @@ impl ToolRegistryServer {
             // Build runtime and policy
             let runtime = match lt.manifest.runtime.as_str() {
                 "process" => {
-                    let cmd = lt.manifest.entry.get("command")
+                    let cmd = lt
+                        .manifest
+                        .entry
+                        .get("command")
                         .and_then(|v| v.as_str())
                         .unwrap_or("");
-                    let args: Vec<String> = lt.manifest.entry.get("args")
+                    let args: Vec<String> = lt
+                        .manifest
+                        .entry
+                        .get("args")
                         .and_then(|v| v.as_array())
-                        .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                                .collect()
+                        })
                         .unwrap_or_default();
                     ToolRuntime::Process(tool_runtime::ProcessConfig {
                         command: PathBuf::from(cmd),
@@ -210,13 +217,18 @@ impl ToolRegistryServer {
                 }
                 "python-uv-script" => {
                     // Map to: uv run [uv_args...] <script>
-                    let script = lt.manifest.entry.get("script")
+                    let script = lt
+                        .manifest
+                        .entry
+                        .get("script")
                         .and_then(|v| v.as_str())
                         .unwrap_or("");
                     let mut args: Vec<String> = vec!["run".to_string()];
                     if let Some(arr) = lt.manifest.entry.get("uv_args").and_then(|v| v.as_array()) {
                         for v in arr.iter() {
-                            if let Some(s) = v.as_str() { args.push(s.to_string()); }
+                            if let Some(s) = v.as_str() {
+                                args.push(s.to_string());
+                            }
                         }
                     }
                     args.push(script.to_string());
@@ -227,12 +239,22 @@ impl ToolRegistryServer {
                     })
                 }
                 "binary" => {
-                    let cmd = lt.manifest.entry.get("command")
+                    let cmd = lt
+                        .manifest
+                        .entry
+                        .get("command")
                         .and_then(|v| v.as_str())
                         .unwrap_or("");
-                    let args: Vec<String> = lt.manifest.entry.get("args")
+                    let args: Vec<String> = lt
+                        .manifest
+                        .entry
+                        .get("args")
                         .and_then(|v| v.as_array())
-                        .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+                        .map(|arr| {
+                            arr.iter()
+                                .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                                .collect()
+                        })
                         .unwrap_or_default();
                     ToolRuntime::Process(tool_runtime::ProcessConfig {
                         command: PathBuf::from(cmd),
@@ -241,11 +263,19 @@ impl ToolRegistryServer {
                     })
                 }
                 "wasm" => {
-                    let wasm_path = lt.manifest.entry.get("wasm_path")
+                    let wasm_path = lt
+                        .manifest
+                        .entry
+                        .get("wasm_path")
                         .and_then(|v| v.as_str())
                         .unwrap_or("");
-                    let export = lt.manifest.entry.get("export")
-                        .and_then(|v| v.as_str()).unwrap_or("call").to_string();
+                    let export = lt
+                        .manifest
+                        .entry
+                        .get("export")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("call")
+                        .to_string();
                     ToolRuntime::Wasm(tool_runtime::WasmConfig {
                         module_path: PathBuf::from(wasm_path),
                         export,
@@ -258,16 +288,32 @@ impl ToolRegistryServer {
             };
             // Parse minimal policy with defaults
             let pol = &lt.manifest.policy;
-            let timeout_ms = pol.get("timeout_ms").and_then(|v| v.as_u64()).unwrap_or(8000);
-            let memory_bytes = pol.get("memory_bytes").and_then(|v| v.as_u64()).unwrap_or(128 * 1024 * 1024);
-            let cpu_time_ms = pol.get("cpu_time_ms").and_then(|v| v.as_u64()).unwrap_or(2000);
-            let max_output_bytes = pol.get("max_output_bytes").and_then(|v| v.as_u64()).unwrap_or(256 * 1024) as usize;
+            let timeout_ms = pol
+                .get("timeout_ms")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(8000);
+            let memory_bytes = pol
+                .get("memory_bytes")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(128 * 1024 * 1024);
+            let cpu_time_ms = pol
+                .get("cpu_time_ms")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(2000);
+            let max_output_bytes = pol
+                .get("max_output_bytes")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(256 * 1024) as usize;
             let network = match pol.get("network").and_then(|v| v.as_str()) {
                 Some("allow") => tool_runtime::NetworkPolicy::Allow,
                 Some("egress-proxy") => tool_runtime::NetworkPolicy::EgressProxy,
                 _ => tool_runtime::NetworkPolicy::Deny,
             };
-            let preopen_tmp = pol.get("fs").and_then(|fs| fs.get("preopen_tmp")).and_then(|v| v.as_bool()).unwrap_or(false);
+            let preopen_tmp = pol
+                .get("fs")
+                .and_then(|fs| fs.get("preopen_tmp"))
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             let policy = Policy {
                 timeout_ms,
                 memory_bytes,
@@ -284,9 +330,17 @@ impl ToolRegistryServer {
             }
             // Compile schemas up-front
             let (params_validator, returns_validator) = {
-                let p = lt.manifest.schema.parameters.clone()
+                let p = lt
+                    .manifest
+                    .schema
+                    .parameters
+                    .clone()
                     .and_then(|s| jsonschema::Validator::new(&s).ok());
-                let r = lt.manifest.schema.returns.clone()
+                let r = lt
+                    .manifest
+                    .schema
+                    .returns
+                    .clone()
                     .and_then(|s| jsonschema::Validator::new(&s).ok());
                 (p, r)
             };
@@ -358,7 +412,10 @@ impl ToolRegistryServer {
 
     async fn get_tool(&self, id: &str) -> Result<Option<Tool>, anyhow::Error> {
         debug!("Getting tool: {}", id);
-        self.tools.get_tool(id).await.map_err(|e| anyhow::anyhow!("Failed to get tool: {}", e))
+        self.tools
+            .get_tool(id)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to get tool: {}", e))
     }
 
     pub async fn list_tools(&self) -> Result<Vec<Tool>> {
@@ -430,12 +487,15 @@ impl ToolRegistryServer {
                 Err(e) => {
                     println!("[wasm exec error] {}", e);
                     serde_json::json!({"content":[{"type":"text","text":format!("error: {}", e)}],"isError":true})
-                },
+                }
             };
             // Optionally validate returns
             if let Some(validator) = &stored.returns_validator {
                 if validator.validate(&v).is_err() {
-                    warn!("tool {} returned payload that failed returns schema validation", tool.id);
+                    warn!(
+                        "tool {} returned payload that failed returns schema validation",
+                        tool.id
+                    );
                     return Err("Tool returned payload failing returns schema".to_string());
                 }
             }
@@ -458,7 +518,6 @@ impl ToolRegistryServer {
         Ok(invocation_result)
     }
 }
-
 
 impl std::error::Error for ToolRegistryServer {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
@@ -524,7 +583,9 @@ impl McpServer for ToolRegistryServer {
                 };
 
                 let registered_id = self.register_server(server_id).await?;
-                Ok(serde_json::to_value(RegistrarRegisterServerResponse { server_id: registered_id })?)
+                Ok(serde_json::to_value(RegistrarRegisterServerResponse {
+                    server_id: registered_id,
+                })?)
             }
             _ => Err(format!("Unknown method: {}", method).into()),
         }

@@ -1,17 +1,17 @@
-use clap::{Parser, Subcommand, Args};
+use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::{Aes256Gcm, Key, Nonce};
+use base64::{engine::general_purpose, Engine as _};
+use clap::{Args, Parser, Subcommand};
+use mcp_registrar::config::env;
 use reqwest::Url;
+use scrypt::Params;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::time::Duration;
+use sha2::{Digest, Sha256};
 use std::path::PathBuf;
-use base64::{engine::general_purpose, Engine as _};
-use sha2::{Sha256, Digest};
-use subxt_signer::{sr25519, SecretUri};
 use std::str::FromStr;
-use aes_gcm::{Aes256Gcm, Key, Nonce};
-use aes_gcm::aead::{Aead, KeyInit};
-use scrypt::Params;
-use mcp_registrar::config::env;
+use std::time::Duration;
+use subxt_signer::{sr25519, SecretUri};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -34,21 +34,29 @@ struct Cli {
 #[derive(Args, Debug)]
 struct RegisterModuleArgs {
     /// Module API base URL (e.g., http://127.0.0.1:8090)
-    #[arg(long, default_value = "http://127.0.0.1:8090")] module_api: Url,
+    #[arg(long, default_value = "http://127.0.0.1:8090")]
+    module_api: Url,
     /// Path to artifact file to upload to IPFS
-    #[arg(long)] artifact_file: PathBuf,
+    #[arg(long)]
+    artifact_file: PathBuf,
     /// Module owner SS58 address
-    #[arg(long)] module_id: String,
+    #[arg(long)]
+    module_id: String,
     /// Keytools key name (stored in ~/.modnet/keys/<name>.json)
-    #[arg(long)] key_name: Option<String>,
+    #[arg(long)]
+    key_name: Option<String>,
     /// Password to decrypt keytools key
-    #[arg(long)] key_password: Option<String>,
+    #[arg(long)]
+    key_password: Option<String>,
     /// Alternative: explicit SURI to sign metadata and for registration
-    #[arg(long)] suri: Option<String>,
+    #[arg(long)]
+    suri: Option<String>,
     /// Chain RPC URL (for registration)
-    #[arg(long, default_value = "ws://127.0.0.1:9944")] chain_rpc_url: String,
+    #[arg(long, default_value = "ws://127.0.0.1:9944")]
+    chain_rpc_url: String,
     /// Optional IPFS base (overrides server default)
-    #[arg(long)] ipfs_base: Option<String>,
+    #[arg(long)]
+    ipfs_base: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -158,10 +166,7 @@ async fn main() -> anyhow::Result<()> {
                 "endpoint": endpoint,
             }),
         ),
-        Commands::UnregisterServer { id } => (
-            "UnregisterServer",
-            serde_json::json!({ "id": id }),
-        ),
+        Commands::UnregisterServer { id } => ("UnregisterServer", serde_json::json!({ "id": id })),
         Commands::GetServer { id } => ("GetServer", serde_json::json!({ "id": id })),
         Commands::ListServers => ("ListServers", serde_json::json!({})),
         Commands::UpdateServerStatus { id, status } => (
@@ -173,23 +178,37 @@ async fn main() -> anyhow::Result<()> {
         Commands::RegisterModule(args) => {
             // 1) Read artifact and compute digest
             let bytes = std::fs::read(&args.artifact_file)?;
-            let mut h = Sha256::new(); h.update(&bytes); let digest_hex = hex::encode(h.finalize());
+            let mut h = Sha256::new();
+            h.update(&bytes);
+            let digest_hex = hex::encode(h.finalize());
             let digest_str = format!("sha256:{}", digest_hex);
             let artifact_b64 = general_purpose::STANDARD.encode(&bytes);
 
             // 2) Sign digest locally with provided SURI or keytools key
-            let suri = if let Some(s) = &args.suri { s.clone() } else {
-                let name = args.key_name.clone().ok_or_else(|| anyhow::anyhow!("--key-name or --suri required"))?;
-                let pw = args.key_password.clone().ok_or_else(|| anyhow::anyhow!("--key-password required with --key-name"))?;
+            let suri = if let Some(s) = &args.suri {
+                s.clone()
+            } else {
+                let name = args
+                    .key_name
+                    .clone()
+                    .ok_or_else(|| anyhow::anyhow!("--key-name or --suri required"))?;
+                let pw = args
+                    .key_password
+                    .clone()
+                    .ok_or_else(|| anyhow::anyhow!("--key-password required with --key-name"))?;
                 load_suri_from_keytools(&name, &pw)?
             };
-            let kp = sr25519::Keypair::from_uri(&SecretUri::from_str(&suri).map_err(|e| anyhow::anyhow!(format!("suri: {}", e)))?)
-                .map_err(|e| anyhow::anyhow!(format!("suri: {}", e)))?;
+            let kp = sr25519::Keypair::from_uri(
+                &SecretUri::from_str(&suri).map_err(|e| anyhow::anyhow!(format!("suri: {}", e)))?,
+            )
+            .map_err(|e| anyhow::anyhow!(format!("suri: {}", e)))?;
             let signature = kp.sign(digest_str.as_bytes());
             let signature_hex = hex::encode(signature.0);
 
             // 3) Publish (artifact upload + metadata), publish=false
-            let client = reqwest::Client::builder().timeout(Duration::from_secs(cli.timeout_secs)).build()?;
+            let client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(cli.timeout_secs))
+                .build()?;
             let mut body = serde_json::json!({
                 "artifact_base64": artifact_b64,
                 "module_id": args.module_id,
@@ -198,14 +217,21 @@ async fn main() -> anyhow::Result<()> {
                 "publish": false,
                 "chain_rpc_url": args.chain_rpc_url,
             });
-            if let Some(b)=&args.ipfs_base { body["ipfs_base"]=serde_json::Value::String(b.clone()); }
-            let pub_resp = client.post(args.module_api.join("modules/publish")?).json(&body).send().await?;
+            if let Some(b) = &args.ipfs_base {
+                body["ipfs_base"] = serde_json::Value::String(b.clone());
+            }
+            let pub_resp = client
+                .post(args.module_api.join("modules/publish")?)
+                .json(&body)
+                .send()
+                .await?;
             let status = pub_resp.status();
             let text = pub_resp.text().await.unwrap_or_default();
             if !status.is_success() {
                 anyhow::bail!("publish: {status} - {text}");
             }
-            let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| anyhow::anyhow!("publish response parse error: {e}; body={text}"))?;
+            let v: serde_json::Value = serde_json::from_str(&text)
+                .map_err(|e| anyhow::anyhow!("publish response parse error: {e}; body={text}"))?;
             let metadata_cid = v
                 .get("metadata_cid")
                 .and_then(|x| x.as_str())
@@ -219,13 +245,21 @@ async fn main() -> anyhow::Result<()> {
                 "chain_rpc_url": args.chain_rpc_url,
             });
             if let (Some(n), Some(pw)) = (args.key_name.clone(), args.key_password.clone()) {
-                reg["key_name"]=serde_json::Value::String(n);
-                reg["key_password"]=serde_json::Value::String(pw);
+                reg["key_name"] = serde_json::Value::String(n);
+                reg["key_password"] = serde_json::Value::String(pw);
             } else {
-                reg["suri"]=serde_json::Value::String(suri);
+                reg["suri"] = serde_json::Value::String(suri);
             }
-            let reg_resp = client.post(args.module_api.join("modules/register")?).json(&reg).send().await?;
-            if !reg_resp.status().is_success() { let status=reg_resp.status(); let txt=reg_resp.text().await.unwrap_or_default(); anyhow::bail!("register: {status} - {txt}"); }
+            let reg_resp = client
+                .post(args.module_api.join("modules/register")?)
+                .json(&reg)
+                .send()
+                .await?;
+            if !reg_resp.status().is_success() {
+                let status = reg_resp.status();
+                let txt = reg_resp.text().await.unwrap_or_default();
+                anyhow::bail!("register: {status} - {txt}");
+            }
             let out: Value = reg_resp.json().await?;
             return Ok(println!("{}", serde_json::to_string_pretty(&out)?));
         }
@@ -271,25 +305,57 @@ fn parse_status(value: &str) -> Result<String, String> {
 
 // ===== keytools decrypt helpers (minimal) =====
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct EncBlobV1 { version: u8, kdf: String, salt: String, params: EncParams, nonce: String, ciphertext: String }
+struct EncBlobV1 {
+    version: u8,
+    kdf: String,
+    salt: String,
+    params: EncParams,
+    nonce: String,
+    ciphertext: String,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct EncParams { n: u32, r: u32, p: u32 }
+struct EncParams {
+    n: u32,
+    r: u32,
+    p: u32,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct KeyJsonMinimal { secret_phrase: Option<String> }
+struct KeyJsonMinimal {
+    secret_phrase: Option<String>,
+}
 
-fn keys_dir() -> PathBuf { env::keys_dir() }
+fn keys_dir() -> PathBuf {
+    env::keys_dir()
+}
 
 fn load_suri_from_keytools(name: &str, password: &str) -> anyhow::Result<String> {
-    let file = keys_dir().join(if name.ends_with(".json") { name.to_string() } else { format!("{}.json", name) });
+    let file = keys_dir().join(if name.ends_with(".json") {
+        name.to_string()
+    } else {
+        format!("{}.json", name)
+    });
     let blob: EncBlobV1 = serde_json::from_slice(&std::fs::read(&file)?)?;
-    if blob.kdf.to_lowercase() != "scrypt" { anyhow::bail!("Unsupported KDF"); }
+    if blob.kdf.to_lowercase() != "scrypt" {
+        anyhow::bail!("Unsupported KDF");
+    }
     let salt = general_purpose::STANDARD.decode(&blob.salt)?;
-    let n = blob.params.n.max(1); let r = blob.params.r.max(1); let p = blob.params.p.max(1);
-    let log_n = (31 - n.leading_zeros()) as u8; let params = Params::new(log_n, r, p, 32)?;
-    let mut key = [0u8;32]; scrypt::scrypt(password.as_bytes(), &salt, &params, &mut key)?;
+    let n = blob.params.n.max(1);
+    let r = blob.params.r.max(1);
+    let p = blob.params.p.max(1);
+    let log_n = (31 - n.leading_zeros()) as u8;
+    let params = Params::new(log_n, r, p, 32)?;
+    let mut key = [0u8; 32];
+    scrypt::scrypt(password.as_bytes(), &salt, &params, &mut key)?;
     let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key));
-    let nonce = general_purpose::STANDARD.decode(&blob.nonce)?; let ct = general_purpose::STANDARD.decode(&blob.ciphertext)?;
-    let pt = cipher.decrypt(Nonce::from_slice(&nonce), ct.as_ref()).map_err(|_| anyhow::anyhow!("Decryption failed: wrong password or corrupted key file"))?;
+    let nonce = general_purpose::STANDARD.decode(&blob.nonce)?;
+    let ct = general_purpose::STANDARD.decode(&blob.ciphertext)?;
+    let pt = cipher
+        .decrypt(Nonce::from_slice(&nonce), ct.as_ref())
+        .map_err(|_| anyhow::anyhow!("Decryption failed: wrong password or corrupted key file"))?;
     let kj: KeyJsonMinimal = serde_json::from_slice(&pt)?;
-    if let Some(phrase) = kj.secret_phrase { Ok(phrase) } else { anyhow::bail!("key file does not contain a secret phrase; cannot build SURI") }
+    if let Some(phrase) = kj.secret_phrase {
+        Ok(phrase)
+    } else {
+        anyhow::bail!("key file does not contain a secret phrase; cannot build SURI")
+    }
 }

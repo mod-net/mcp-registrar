@@ -1,8 +1,8 @@
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::time::Instant;
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::time::Instant;
 
 /// Represents a point-in-time snapshot of task metrics
 #[derive(Debug, Clone)]
@@ -82,7 +82,10 @@ impl TaskMetricsCollector {
     pub fn record_task_completion(&self) {
         self.active_tasks.fetch_sub(1, Ordering::Relaxed);
         self.completed_tasks.fetch_add(1, Ordering::Relaxed);
-        self.total_execution_time_ms.fetch_add(self.max_execution_time_ms.load(Ordering::Relaxed), Ordering::Relaxed);
+        self.total_execution_time_ms.fetch_add(
+            self.max_execution_time_ms.load(Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
     }
 
     /// Record a task failure
@@ -110,12 +113,16 @@ impl TaskMetricsCollector {
             if memory_bytes <= current_peak {
                 break;
             }
-            if self.peak_memory_bytes.compare_exchange(
-                current_peak,
-                memory_bytes,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ).is_ok() {
+            if self
+                .peak_memory_bytes
+                .compare_exchange(
+                    current_peak,
+                    memory_bytes,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
                 break;
             }
         }
@@ -126,12 +133,16 @@ impl TaskMetricsCollector {
             if cpu_time_ms <= current_peak {
                 break;
             }
-            if self.peak_cpu_time_ms.compare_exchange(
-                current_peak,
-                cpu_time_ms,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ).is_ok() {
+            if self
+                .peak_cpu_time_ms
+                .compare_exchange(
+                    current_peak,
+                    cpu_time_ms,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
                 break;
             }
         }
@@ -143,12 +154,16 @@ impl TaskMetricsCollector {
             if current_active <= current_peak {
                 break;
             }
-            if self.peak_concurrent_tasks.compare_exchange(
-                current_peak,
-                current_active,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ).is_ok() {
+            if self
+                .peak_concurrent_tasks
+                .compare_exchange(
+                    current_peak,
+                    current_active,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
                 break;
             }
         }
@@ -159,7 +174,7 @@ impl TaskMetricsCollector {
         let total_tasks = self.total_tasks.load(Ordering::Relaxed);
         let completed_tasks = self.completed_tasks.load(Ordering::Relaxed);
         let total_execution_time = self.total_execution_time_ms.load(Ordering::Relaxed);
-        
+
         let avg_execution_time = if completed_tasks > 0 {
             total_execution_time as f64 / completed_tasks as f64
         } else {
@@ -189,12 +204,16 @@ impl TaskMetricsCollector {
             if execution_time_ms <= current_max {
                 break;
             }
-            if self.max_execution_time_ms.compare_exchange(
-                current_max,
-                execution_time_ms,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ).is_ok() {
+            if self
+                .max_execution_time_ms
+                .compare_exchange(
+                    current_max,
+                    execution_time_ms,
+                    Ordering::Relaxed,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
                 break;
             }
         }
@@ -224,13 +243,24 @@ impl ToolMetricsCollector {
 
     pub fn record(&self, duration_ms: u64, bytes: u64, is_error: bool) {
         self.invocations.fetch_add(1, Ordering::Relaxed);
-        if is_error { self.errors.fetch_add(1, Ordering::Relaxed); }
-        self.total_duration_ms.fetch_add(duration_ms, Ordering::Relaxed);
+        if is_error {
+            self.errors.fetch_add(1, Ordering::Relaxed);
+        }
+        self.total_duration_ms
+            .fetch_add(duration_ms, Ordering::Relaxed);
         // update max duration
         loop {
             let current = self.max_duration_ms.load(Ordering::Relaxed);
-            if duration_ms <= current { break; }
-            if self.max_duration_ms.compare_exchange(current, duration_ms, Ordering::Relaxed, Ordering::Relaxed).is_ok() { break; }
+            if duration_ms <= current {
+                break;
+            }
+            if self
+                .max_duration_ms
+                .compare_exchange(current, duration_ms, Ordering::Relaxed, Ordering::Relaxed)
+                .is_ok()
+            {
+                break;
+            }
         }
         self.total_bytes.fetch_add(bytes, Ordering::Relaxed);
     }
@@ -280,7 +310,7 @@ impl TaskExecutionGuard {
     pub fn retry(&mut self) {
         self.retried = true;
     }
-    
+
     /// Get the elapsed time in milliseconds since this guard was created
     pub fn elapsed_ms(&self) -> u64 {
         self.start_time.elapsed().as_millis() as u64
@@ -315,41 +345,41 @@ mod tests {
     #[test]
     fn test_metrics_collection() {
         let collector = Arc::new(TaskMetricsCollector::new());
-        
+
         // Record a task start and completion
         {
             let mut _guard = TaskExecutionGuard::new(collector.clone());
             thread::sleep(Duration::from_millis(50));
             _guard.complete();
         }
-        
+
         // Record a task failure
         {
             let mut _guard = TaskExecutionGuard::new(collector.clone());
             thread::sleep(Duration::from_millis(75));
             _guard.fail();
         }
-        
+
         // Record a task retry
         {
             let mut _guard = TaskExecutionGuard::new(collector.clone());
             thread::sleep(Duration::from_millis(75));
             _guard.retry();
         }
-        
+
         // Record some retries
         collector.record_task_retry();
         collector.record_task_retry();
-        
+
         // Record a task that fails without explicit completion
         {
             let _guard = TaskExecutionGuard::new(collector.clone());
             // Guard is dropped without calling complete/fail/retry
         }
-        
+
         // Get the metrics
         let metrics = collector.get_metrics();
-        
+
         // Verify metrics
         assert_eq!(metrics.total_tasks, 4);
         assert_eq!(metrics.completed_tasks, 1);
@@ -360,31 +390,31 @@ mod tests {
     #[test]
     fn test_guard_drop_behavior() {
         let collector = Arc::new(TaskMetricsCollector::new());
-        
+
         // Test complete
         {
             let mut _guard = TaskExecutionGuard::new(collector.clone());
             _guard.complete();
         }
-        
+
         // Test fail
         {
             let mut _guard = TaskExecutionGuard::new(collector.clone());
             _guard.fail();
         }
-        
+
         // Test retry
         {
             let mut _guard = TaskExecutionGuard::new(collector.clone());
             _guard.retry();
         }
-        
+
         // Test drop without calling any method
         {
             let _guard = TaskExecutionGuard::new(collector.clone());
             // Guard is dropped without calling complete/fail/retry
         }
-        
+
         // Test drop after calling a method
         {
             let mut _guard = TaskExecutionGuard::new(collector.clone());
@@ -392,4 +422,4 @@ mod tests {
             // Guard is dropped after calling complete
         }
     }
-} 
+}

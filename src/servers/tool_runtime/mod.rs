@@ -22,19 +22,21 @@ pub struct ProcessConfig {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WasmConfig {
     pub module_path: PathBuf,
-    #[serde(default = "default_export")] 
+    #[serde(default = "default_export")]
     pub export: String, // default "call"
 }
 
-fn default_export() -> String { "call".to_string() }
+fn default_export() -> String {
+    "call".to_string()
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum NetworkPolicy {
-    #[serde(rename = "deny")] 
+    #[serde(rename = "deny")]
     Deny,
-    #[serde(rename = "egress-proxy")] 
+    #[serde(rename = "egress-proxy")]
     EgressProxy,
-    #[serde(rename = "allow")] 
+    #[serde(rename = "allow")]
     Allow,
 }
 

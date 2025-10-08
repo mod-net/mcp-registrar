@@ -1,5 +1,5 @@
-pub mod task;
-pub mod server;
-pub mod tool;
+pub mod prompt;
 pub mod resource;
-pub mod prompt; 
+pub mod server;
+pub mod task;
+pub mod tool;

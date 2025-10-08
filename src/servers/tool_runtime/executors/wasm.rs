@@ -1,10 +1,10 @@
 use crate::error::Error;
 use crate::servers::tool_runtime::{Executor, Policy, ToolRuntime};
-use crate::utils::{ipfs, chain, module_cache};
+use crate::utils::{chain, ipfs, module_cache};
 use std::path::Path;
 use wasmtime::{Config, Engine, Linker, Module, Store};
+use wasmtime_wasi::p1::{add_to_linker_sync, WasiP1Ctx};
 use wasmtime_wasi::WasiCtxBuilder;
-use wasmtime_wasi::p1::{WasiP1Ctx, add_to_linker_sync};
 
 #[derive(Debug)]
 pub struct WasmExecutor;
@@ -21,7 +21,11 @@ impl Executor for WasmExecutor {
         // Load runtime configuration
         let cfg = match runtime {
             ToolRuntime::Wasm(cfg) => cfg,
-            _ => return Err(Error::InvalidState("WasmExecutor received non-wasm runtime".into())),
+            _ => {
+                return Err(Error::InvalidState(
+                    "WasmExecutor received non-wasm runtime".into(),
+                ))
+            }
         };
         let module_path = &cfg.module_path;
         if !Path::new(module_path).exists() {
@@ -44,39 +48,75 @@ impl Executor for WasmExecutor {
                 let mp = chain::resolve_chain_uri(&path_str).await?;
                 // Try cache by digest if available
                 if let Some(d) = &mp.digest {
-                    if let Some(bytes) = module_cache::read(&format!("sha256-{}", d)) { bytes } else {
+                    if let Some(bytes) = module_cache::read(&format!("sha256-{}", d)) {
+                        bytes
+                    } else {
                         let fetched = if mp.uri.starts_with("ipfs://") {
                             ipfs::fetch_ipfs_bytes(&mp.uri).await?
                         } else if mp.uri.starts_with("http://") || mp.uri.starts_with("https://") {
-                            reqwest::get(&mp.uri).await.map_err(|e| Error::Serialization(e.to_string()))?
-                                .bytes().await.map_err(|e| Error::Serialization(e.to_string()))?.to_vec()
+                            reqwest::get(&mp.uri)
+                                .await
+                                .map_err(|e| Error::Serialization(e.to_string()))?
+                                .bytes()
+                                .await
+                                .map_err(|e| Error::Serialization(e.to_string()))?
+                                .to_vec()
                         } else {
-                            tokio::fs::read(&mp.uri).await.map_err(|e| Error::Serialization(e.to_string()))?
+                            tokio::fs::read(&mp.uri)
+                                .await
+                                .map_err(|e| Error::Serialization(e.to_string()))?
                         };
                         // Verify digest if provided
                         chain::verify_digest(&fetched, d)?;
                         // Optional signature verify if present
-                        if let Some(sig) = &mp.signature { chain::verify_signature_sr25519(&fetched, &mp.digest, &mp.owner, sig)?; }
+                        if let Some(sig) = &mp.signature {
+                            chain::verify_signature_sr25519(&fetched, &mp.digest, &mp.owner, sig)?;
+                        }
                         module_cache::write(&format!("sha256-{}", d), &fetched);
                         fetched
                     }
                 } else if mp.uri.starts_with("ipfs://") {
                     // Cache by CID when no digest is available
-                    let cid_key = format!("cid-{}", mp.uri.trim_start_matches("ipfs://").split('/').next().unwrap_or(""));
-                    if let Some(bytes) = module_cache::read(&cid_key) { bytes } else {
+                    let cid_key = format!(
+                        "cid-{}",
+                        mp.uri
+                            .trim_start_matches("ipfs://")
+                            .split('/')
+                            .next()
+                            .unwrap_or("")
+                    );
+                    if let Some(bytes) = module_cache::read(&cid_key) {
+                        bytes
+                    } else {
                         let fetched = ipfs::fetch_ipfs_bytes(&mp.uri).await?;
                         module_cache::write(&cid_key, &fetched);
                         fetched
                     }
                 } else if mp.uri.starts_with("http://") || mp.uri.starts_with("https://") {
-                    reqwest::get(&mp.uri).await.map_err(|e| Error::Serialization(e.to_string()))?
-                        .bytes().await.map_err(|e| Error::Serialization(e.to_string()))?.to_vec()
+                    reqwest::get(&mp.uri)
+                        .await
+                        .map_err(|e| Error::Serialization(e.to_string()))?
+                        .bytes()
+                        .await
+                        .map_err(|e| Error::Serialization(e.to_string()))?
+                        .to_vec()
                 } else {
-                    tokio::fs::read(&mp.uri).await.map_err(|e| Error::Serialization(e.to_string()))?
+                    tokio::fs::read(&mp.uri)
+                        .await
+                        .map_err(|e| Error::Serialization(e.to_string()))?
                 }
             } else if path_str.starts_with("ipfs://") {
-                let cid_key = format!("cid-{}", path_str.trim_start_matches("ipfs://").split('/').next().unwrap_or(""));
-                if let Some(bytes) = module_cache::read(&cid_key) { bytes } else {
+                let cid_key = format!(
+                    "cid-{}",
+                    path_str
+                        .trim_start_matches("ipfs://")
+                        .split('/')
+                        .next()
+                        .unwrap_or("")
+                );
+                if let Some(bytes) = module_cache::read(&cid_key) {
+                    bytes
+                } else {
                     let fetched = ipfs::fetch_ipfs_bytes(&path_str).await?;
                     module_cache::write(&cid_key, &fetched);
                     fetched
@@ -96,7 +136,8 @@ impl Executor for WasmExecutor {
         let _module_path = module_path.clone();
         let max_bytes = policy.max_output_bytes;
         let timeout = std::time::Duration::from_millis(policy.timeout_ms);
-        let fuel_budget: u64 = std::cmp::max(1_000_000, policy.cpu_time_ms.saturating_mul(10_000)) as u64;
+        let fuel_budget: u64 =
+            std::cmp::max(1_000_000, policy.cpu_time_ms.saturating_mul(10_000)) as u64;
 
         let tool_id_s = tool_id.to_string();
         let fut = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, Error> {
@@ -109,7 +150,9 @@ impl Executor for WasmExecutor {
             let wasi_p1 = WasiCtxBuilder::new().build_p1();
             let mut store = Store::new(&engine, wasi_p1);
             // Add fuel (v16 API uses set_fuel)
-            store.set_fuel(fuel_budget).map_err(|e| Error::Serialization(e.to_string()))?;
+            store
+                .set_fuel(fuel_budget)
+                .map_err(|e| Error::Serialization(e.to_string()))?;
 
             // Linker with WASI (safe even if module does not import WASI)
             let mut linker: Linker<WasiP1Ctx> = Linker::new(&engine);
@@ -127,12 +170,16 @@ impl Executor for WasmExecutor {
 
             let alloc = instance
                 .get_typed_func::<i32, i32>(&mut store, "alloc")
-                .map_err(|_| Error::InvalidState("wasm module missing required alloc(i32)->i32".into()))?;
+                .map_err(|_| {
+                    Error::InvalidState("wasm module missing required alloc(i32)->i32".into())
+                })?;
 
             // Allocate and write input bytes
             let input_bytes = args_str.as_bytes();
             if input_bytes.len() > i32::MAX as usize {
-                return Err(Error::InvalidState("arguments too large for wasm input".into()));
+                return Err(Error::InvalidState(
+                    "arguments too large for wasm input".into(),
+                ));
             }
             let in_len = input_bytes.len() as i32;
             let in_ptr = alloc
@@ -145,10 +192,12 @@ impl Executor for WasmExecutor {
             // Locate exported call function
             let call = instance
                 .get_typed_func::<(i32, i32), (i32, i32)>(&mut store, &export_name)
-                .map_err(|_| Error::InvalidState(format!(
-                    "wasm export '{}' with (i32,i32)->(i32,i32) not found",
-                    export_name
-                )))?;
+                .map_err(|_| {
+                    Error::InvalidState(format!(
+                        "wasm export '{}' with (i32,i32)->(i32,i32) not found",
+                        export_name
+                    ))
+                })?;
 
             // Invoke
             let (out_ptr, out_len) = call
@@ -176,18 +225,30 @@ impl Executor for WasmExecutor {
 
             // Decode and parse JSON (robust to trailing bytes)
             let s = String::from_utf8(out).map_err(|e| Error::Serialization(e.to_string()))?;
-            let s_trim = if let Some(idx) = s.rfind('}') { &s[..=idx] } else { s.as_str() };
+            let s_trim = if let Some(idx) = s.rfind('}') {
+                &s[..=idx]
+            } else {
+                s.as_str()
+            };
             let v: serde_json::Value = serde_json::from_str(s_trim)?;
             let duration_ms = started.elapsed().as_millis();
             let bytes = s_trim.len();
-            tracing::info!("wasm tool {} completed in {} ms ({} bytes)", tool_id_s, duration_ms, bytes);
+            tracing::info!(
+                "wasm tool {} completed in {} ms ({} bytes)",
+                tool_id_s,
+                duration_ms,
+                bytes
+            );
             crate::monitoring::TOOL_METRICS.record(duration_ms as u64, bytes as u64, false);
             Ok(v)
         });
 
         match tokio::time::timeout(timeout, fut).await {
             Ok(join) => join.map_err(|e| Error::Other(Box::new(e)))?,
-            Err(_) => Err(Error::InvalidState(format!("wasm tool {} timed out", tool_id)))
+            Err(_) => Err(Error::InvalidState(format!(
+                "wasm tool {} timed out",
+                tool_id
+            ))),
         }
     }
 }

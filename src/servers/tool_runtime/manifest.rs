@@ -37,13 +37,23 @@ pub fn load_manifests(root: &Path) -> anyhow::Result<Vec<LoadedTool>> {
     if !root.exists() {
         return Ok(out);
     }
-    for entry in walkdir::WalkDir::new(root).into_iter().filter_map(Result::ok) {
-        if !entry.file_type().is_file() { continue; }
-        if entry.file_name() != "tool.json" { continue; }
+    for entry in walkdir::WalkDir::new(root)
+        .into_iter()
+        .filter_map(Result::ok)
+    {
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        if entry.file_name() != "tool.json" {
+            continue;
+        }
         let p = entry.path();
         let content = fs::read_to_string(p)?;
         match serde_json::from_str::<ToolManifest>(&content) {
-            Ok(m) => out.push(LoadedTool { manifest: m, manifest_path: p.to_path_buf() }),
+            Ok(m) => out.push(LoadedTool {
+                manifest: m,
+                manifest_path: p.to_path_buf(),
+            }),
             Err(e) => {
                 tracing::warn!("failed to parse manifest {:?}: {}", p, e);
             }
@@ -54,7 +64,10 @@ pub fn load_manifests(root: &Path) -> anyhow::Result<Vec<LoadedTool>> {
 
 pub fn to_tool(manifest: &ToolManifest) -> Tool {
     // Map manifest to existing Tool model
-    let description = manifest.description.clone().unwrap_or_else(|| manifest.name.clone());
+    let description = manifest
+        .description
+        .clone()
+        .unwrap_or_else(|| manifest.name.clone());
     let categories = manifest
         .metadata
         .get("categories")

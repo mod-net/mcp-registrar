@@ -15,9 +15,9 @@ pub struct TextGeneratorServer {
 
 impl TextGeneratorServer {
     pub fn from_env() -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let api_key = env::var("OPENAI_API_KEY")
-            .map_err(|_| "OPENAI_API_KEY is not set")?;
-        let base_url = env::var("OPENAI_BASE_URL").unwrap_or_else(|_| "https://api.openai.com/v1".to_string());
+        let api_key = env::var("OPENAI_API_KEY").map_err(|_| "OPENAI_API_KEY is not set")?;
+        let base_url =
+            env::var("OPENAI_BASE_URL").unwrap_or_else(|_| "https://api.openai.com/v1".to_string());
         let default_model = env::var("OPENAI_MODEL").ok();
 
         let http = reqwest::Client::builder()
@@ -70,9 +70,10 @@ impl McpServer for TextGeneratorServer {
     async fn handle(&self, name: &str, params: Value) -> HandlerResult {
         match name {
             // Accept a few common method aliases
-            "ChatCompletionsCreate" | "chat.completions.create" | "CreateChatCompletion" | "chat_completions" => {
-                self.handle_chat_completions(params).await
-            }
+            "ChatCompletionsCreate"
+            | "chat.completions.create"
+            | "CreateChatCompletion"
+            | "chat_completions" => self.handle_chat_completions(params).await,
             _ => Err(format!("Unknown method: {}", name).into()),
         }
     }

@@ -1,11 +1,14 @@
 use clap::Parser;
-use mcp_registrar::utils::{chain, ipfs, metadata};
-use subxt::{config::PolkadotConfig, OnlineClient};
-use subxt::dynamic::{storage, Value};
 use mcp_registrar::config::env;
+use mcp_registrar::utils::{chain, ipfs, metadata};
+use subxt::dynamic::{storage, Value};
+use subxt::{config::PolkadotConfig, OnlineClient};
 
 #[derive(Parser, Debug)]
-#[command(name = "query-module", about = "Retrieve a module mapping and metadata by SS58 or 0x pubkey hex")] 
+#[command(
+    name = "query-module",
+    about = "Retrieve a module mapping and metadata by SS58 or 0x pubkey hex"
+)]
 struct Args {
     /// Module id: SS58 address (e.g., 5G...) or 0x<64-hex> public key
     #[arg(long)]
@@ -31,12 +34,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Fetch storage: Modules::Modules(key)
     let addr = storage("Modules", "Modules", vec![Value::from_bytes(key.to_vec())]);
-    let cid_thunk_opt = api
-        .storage()
-        .at_latest()
-        .await?
-        .fetch(&addr)
-        .await?;
+    let cid_thunk_opt = api.storage().at_latest().await?.fetch(&addr).await?;
 
     let cid = if let Some(thunk) = cid_thunk_opt {
         let bytes: Vec<u8> = thunk.as_type::<Vec<u8>>()?;
@@ -71,7 +69,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ipfs::fetch_ipfs_bytes(&md.artifact_uri).await?
     } else if md.artifact_uri.starts_with("http://") || md.artifact_uri.starts_with("https://") {
         let resp = reqwest::get(&md.artifact_uri).await?;
-        if !resp.status().is_success() { Err(format!("artifact {} -> {}", md.artifact_uri, resp.status()))? };
+        if !resp.status().is_success() {
+            Err(format!("artifact {} -> {}", md.artifact_uri, resp.status()))?
+        };
         resp.bytes().await?.to_vec()
     } else {
         eprintln!("unsupported artifact_uri: {}", md.artifact_uri);
@@ -79,7 +79,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     chain::verify_digest(&art_bytes, &md.digest)?;
-    chain::verify_signature_sr25519(&art_bytes, &Some(md.digest.clone()), &args.module_id, &md.signature)?;
+    chain::verify_signature_sr25519(
+        &art_bytes,
+        &Some(md.digest.clone()),
+        &args.module_id,
+        &md.signature,
+    )?;
 
     let pointer = chain::ModulePointer {
         module_id: md.module_id,

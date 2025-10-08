@@ -1,20 +1,20 @@
-use std::sync::Arc;
 use std::error::Error as StdError;
 use std::future::Future;
-use std::pin::Pin;
 use std::path::PathBuf;
+use std::pin::Pin;
+use std::sync::Arc;
 
 use async_trait::async_trait;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use crate::error::Error;
 use crate::models::task::{Task, TaskSchedule, TaskStatus};
 use crate::monitoring::TaskMetricsCollector;
-use crate::servers::tool_invoker::ToolInvoker;
-use crate::transport::{McpServer, HandlerResult};
-use crate::utils::task_storage::{TaskStorage, FileTaskStorage};
 use crate::servers::task_executor::TaskExecutor;
-use crate::error::Error;
+use crate::servers::tool_invoker::ToolInvoker;
+use crate::transport::{HandlerResult, McpServer};
+use crate::utils::task_storage::{FileTaskStorage, TaskStorage};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CreateTaskRequest {
@@ -61,8 +61,7 @@ impl ToolInvoker for DummyToolRegistry {
         &self,
         _tool: String,
         _arguments: Value,
-    ) -> Pin<Box<dyn Future<Output = Result<Value, Box<dyn StdError + Send + Sync>>> + Send>>
-    {
+    ) -> Pin<Box<dyn Future<Output = Result<Value, Box<dyn StdError + Send + Sync>>> + Send>> {
         Box::pin(async {
             Ok(serde_json::json!({
                 "status": "success",
@@ -93,26 +92,24 @@ impl TaskSchedulerServer {
     }
 
     pub async fn get_task_by_id(&self, task_id: &str) -> Result<Task, Error> {
-        self.storage.get_task(task_id)
-            .await?
-            .ok_or(Error::NotFound)
+        self.storage.get_task(task_id).await?.ok_or(Error::NotFound)
     }
 
     pub async fn get_task(&self, request: CreateTaskRequest) -> Result<Task, Error> {
         // Create a new task with the given request
         let task = Task::new(
-            request.name.clone(), 
-            request.params.clone(), 
+            request.name.clone(),
+            request.params.clone(),
             request.schedule.clone(),
             request.max_retries,
             request.timeout,
             request.frustration_threshold,
-            request.similarity_threshold
+            request.similarity_threshold,
         );
-        
+
         // Store the task
         self.storage.store_task(task.clone()).await?;
-        
+
         Ok(task)
     }
 
@@ -160,11 +157,15 @@ impl ToolInvoker for TaskSchedulerServer {
         let storage = Arc::new(FileTaskStorage::new(PathBuf::from("tasks.json")));
         let metrics = Arc::new(TaskMetricsCollector::new());
         let tool_invoker = Arc::new(DummyToolRegistry::new());
-        
+
         Self::new(
-            Arc::new(TaskExecutor::new(tool_invoker, storage.clone(), metrics.clone())), 
-            storage, 
-            metrics
+            Arc::new(TaskExecutor::new(
+                tool_invoker,
+                storage.clone(),
+                metrics.clone(),
+            )),
+            storage,
+            metrics,
         )
     }
 
@@ -172,8 +173,7 @@ impl ToolInvoker for TaskSchedulerServer {
         &self,
         tool: String,
         arguments: Value,
-    ) -> Pin<Box<dyn Future<Output = Result<Value, Box<dyn StdError + Send + Sync>>> + Send>>
-    {
+    ) -> Pin<Box<dyn Future<Output = Result<Value, Box<dyn StdError + Send + Sync>>> + Send>> {
         let tool_invoker = self.tool_invoker.clone();
         Box::pin(async move { tool_invoker.invoke_tool(tool, arguments).await })
     }
@@ -199,13 +199,13 @@ impl McpServer for TaskSchedulerServer {
             }
             "CancelTask" => {
                 let id: String = serde_json::from_value(params)?;
-                
+
                 let mut task = self.get_task_by_id(&id).await?;
-                
+
                 task.update_status(TaskStatus::Cancelled)?;
-                
+
                 self.storage.update_task(task.clone()).await?;
-                
+
                 Ok(serde_json::to_value(TaskResponse { task })?)
             }
             "DeleteTask" => {

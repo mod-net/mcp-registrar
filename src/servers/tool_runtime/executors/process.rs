@@ -19,10 +19,17 @@ impl Executor for ProcessExecutor {
     ) -> Result<serde_json::Value, Error> {
         let cfg = match runtime {
             ToolRuntime::Process(cfg) => cfg,
-            _ => return Err(Error::InvalidState("ProcessExecutor received non-process runtime".into())),
+            _ => {
+                return Err(Error::InvalidState(
+                    "ProcessExecutor received non-process runtime".into(),
+                ))
+            }
         };
 
-        debug!("spawning process tool {} -> {:?} {:?}", tool_id, cfg.command, cfg.args);
+        debug!(
+            "spawning process tool {} -> {:?} {:?}",
+            tool_id, cfg.command, cfg.args
+        );
         let mut cmd = TokioCommand::new(&cfg.command);
         if !cfg.args.is_empty() {
             cmd.args(&cfg.args);
@@ -48,14 +55,20 @@ impl Executor for ProcessExecutor {
         let request = serde_json::json!({ "arguments": args_json });
         let mut line = serde_json::to_string(&request)?;
         line.push('\n');
-        stdin.write_all(line.as_bytes()).await.map_err(Error::from)?;
+        stdin
+            .write_all(line.as_bytes())
+            .await
+            .map_err(Error::from)?;
         drop(stdin);
 
         let started = std::time::Instant::now();
         loop {
             let elapsed_ms = started.elapsed().as_millis() as u64;
             if elapsed_ms >= policy.timeout_ms {
-                warn!("process tool {} timed out after {} ms", tool_id, policy.timeout_ms);
+                warn!(
+                    "process tool {} timed out after {} ms",
+                    tool_id, policy.timeout_ms
+                );
                 return Err(Error::InvalidState(format!("tool {} timed out", tool_id)));
             }
 
@@ -66,7 +79,10 @@ impl Executor for ProcessExecutor {
             )
             .await
             .map_err(|_| {
-                warn!("process tool {} timed out after {} ms", tool_id, policy.timeout_ms);
+                warn!(
+                    "process tool {} timed out after {} ms",
+                    tool_id, policy.timeout_ms
+                );
                 Error::InvalidState(format!("tool {} timed out", tool_id))
             })?;
 
@@ -86,15 +102,17 @@ impl Executor for ProcessExecutor {
                     }
                     let duration_ms = started.elapsed().as_millis();
                     let bytes = line.len();
-                    info!("process tool {} completed in {} ms ({} bytes)", tool_id, duration_ms, bytes);
+                    info!(
+                        "process tool {} completed in {} ms ({} bytes)",
+                        tool_id, duration_ms, bytes
+                    );
                     crate::monitoring::TOOL_METRICS.record(duration_ms as u64, bytes as u64, false);
                     return Ok(val);
                 }
                 Err(_) => {
                     debug!(
                         "process tool {} emitted non-JSON line, skipping: {}",
-                        tool_id,
-                        trimmed
+                        tool_id, trimmed
                     );
                     continue;
                 }

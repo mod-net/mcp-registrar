@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -17,31 +17,31 @@ pub enum ResourceType {
 pub struct Resource {
     /// Unique identifier for the resource
     pub id: String,
-    
+
     /// Human-readable name of the resource
     pub name: String,
-    
+
     /// Detailed description of what the resource provides
     pub description: String,
-    
+
     /// Type of resource
     pub resource_type: ResourceType,
-    
+
     /// Server ID that provides this resource
     pub server_id: String,
-    
+
     /// Access path or URL template for the resource
     pub access_path: String,
-    
+
     /// When the resource was registered
     pub registered_at: DateTime<Utc>,
-    
+
     /// Schema for the resource's data model (if applicable)
     pub schema: Option<serde_json::Value>,
-    
+
     /// Schema for query parameters (if applicable)
     pub query_schema: Option<serde_json::Value>,
-    
+
     /// Additional metadata about the resource
     pub metadata: HashMap<String, serde_json::Value>,
 }
@@ -50,10 +50,10 @@ pub struct Resource {
 pub struct ResourceQuery {
     /// ID of the resource to query
     pub resource_id: String,
-    
+
     /// Query parameters
     pub parameters: serde_json::Value,
-    
+
     /// Query context
     pub context: Option<HashMap<String, serde_json::Value>>,
 }
@@ -62,16 +62,16 @@ pub struct ResourceQuery {
 pub struct ResourceQueryResult {
     /// The resource query that generated this result
     pub query: ResourceQuery,
-    
+
     /// Result of the query
     pub result: serde_json::Value,
-    
+
     /// Any error information if the query failed
     pub error: Option<String>,
-    
+
     /// Time when the query started
     pub started_at: DateTime<Utc>,
-    
+
     /// Time when the query completed
     pub completed_at: DateTime<Utc>,
 }
@@ -101,13 +101,13 @@ impl Resource {
             metadata: HashMap::new(),
         }
     }
-    
+
     /// Add metadata to the resource
     pub fn with_metadata(mut self, key: &str, value: serde_json::Value) -> Self {
         self.metadata.insert(key.to_string(), value);
         self
     }
-    
+
     /// Validate query parameters against the resource's schema
     pub fn validate_query(&self, parameters: &serde_json::Value) -> Result<(), String> {
         // In a real implementation, this would use more robust validation
@@ -120,7 +120,10 @@ impl Resource {
                         for field in required_fields {
                             if let Some(field_name) = field.as_str() {
                                 if !parameters.get(field_name).is_some() {
-                                    return Err(format!("Required parameter '{}' is missing", field_name));
+                                    return Err(format!(
+                                        "Required parameter '{}' is missing",
+                                        field_name
+                                    ));
                                 }
                             }
                         }
@@ -147,7 +150,7 @@ mod tests {
         let resource_type = ResourceType::Database;
         let server_id = "server-1".to_string();
         let access_path = "postgresql://localhost:5432/testdb".to_string();
-        
+
         let resource = Resource::new(
             id.clone(),
             name.clone(),
@@ -158,7 +161,7 @@ mod tests {
             None,
             None,
         );
-        
+
         assert_eq!(resource.id, id);
         assert_eq!(resource.name, name);
         assert_eq!(resource.description, description);
@@ -169,7 +172,7 @@ mod tests {
         assert!(resource.query_schema.is_none());
         assert!(resource.metadata.is_empty());
     }
-    
+
     #[test]
     fn test_resource_with_metadata() {
         let resource = Resource::new(
@@ -184,12 +187,18 @@ mod tests {
         )
         .with_metadata("region", serde_json::json!("us-west-1"))
         .with_metadata("rate_limit", serde_json::json!(100));
-        
+
         assert_eq!(resource.metadata.len(), 2);
-        assert_eq!(resource.metadata.get("region").unwrap(), &serde_json::json!("us-west-1"));
-        assert_eq!(resource.metadata.get("rate_limit").unwrap(), &serde_json::json!(100));
+        assert_eq!(
+            resource.metadata.get("region").unwrap(),
+            &serde_json::json!("us-west-1")
+        );
+        assert_eq!(
+            resource.metadata.get("rate_limit").unwrap(),
+            &serde_json::json!(100)
+        );
     }
-    
+
     #[test]
     fn test_resource_validate_query_no_schema() {
         let resource = Resource::new(
@@ -202,12 +211,12 @@ mod tests {
             None,
             None,
         );
-        
+
         // Without a schema, any query parameters should be valid
         let result = resource.validate_query(&serde_json::json!({"query": "SELECT * FROM users"}));
         assert!(result.is_ok());
     }
-    
+
     #[test]
     fn test_resource_validate_query_with_schema() {
         let query_schema = serde_json::json!({
@@ -219,7 +228,7 @@ mod tests {
                 "offset": {"type": "number"}
             }
         });
-        
+
         let resource = Resource::new(
             "resource-1".to_string(),
             "Test Database".to_string(),
@@ -230,14 +239,14 @@ mod tests {
             None,
             Some(query_schema),
         );
-        
+
         // Valid query parameters
         let valid_params = serde_json::json!({
             "query": "SELECT * FROM users",
             "limit": 10
         });
         assert!(resource.validate_query(&valid_params).is_ok());
-        
+
         // Missing required parameter
         let invalid_params = serde_json::json!({
             "query": "SELECT * FROM users"
@@ -245,14 +254,14 @@ mod tests {
         let result = resource.validate_query(&invalid_params);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Required parameter 'limit' is missing");
-        
+
         // Non-object parameters
         let non_object_params = serde_json::json!("SELECT * FROM users");
         let result = resource.validate_query(&non_object_params);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Parameters must be an object");
     }
-    
+
     #[test]
     fn test_resource_type_serialization() {
         // Standard resource types
@@ -260,19 +269,19 @@ mod tests {
         let serialized = serde_json::to_string(&db_type).unwrap();
         let deserialized: ResourceType = serde_json::from_str(&serialized).unwrap();
         assert_eq!(deserialized, ResourceType::Database);
-        
+
         // Custom resource type
         let custom_type = ResourceType::Other("CustomType".to_string());
         let serialized = serde_json::to_string(&custom_type).unwrap();
         let deserialized: ResourceType = serde_json::from_str(&serialized).unwrap();
-        
+
         if let ResourceType::Other(custom_name) = deserialized {
             assert_eq!(custom_name, "CustomType");
         } else {
             panic!("Expected ResourceType::Other, got {:?}", deserialized);
         }
     }
-    
+
     #[test]
     fn test_resource_serialization() {
         let resource = Resource::new(
@@ -295,24 +304,30 @@ mod tests {
             })),
         )
         .with_metadata("region", serde_json::json!("us-west-1"));
-        
+
         let serialized = serde_json::to_string(&resource).unwrap();
         let deserialized: Resource = serde_json::from_str(&serialized).unwrap();
-        
+
         assert_eq!(deserialized.id, resource.id);
         assert_eq!(deserialized.name, resource.name);
         assert_eq!(deserialized.access_path, resource.access_path);
-        
+
         // Check resource type serialization
         assert_eq!(deserialized.resource_type, ResourceType::RemoteApi);
-        
+
         // Check metadata
-        assert_eq!(deserialized.metadata.get("region").unwrap(), &serde_json::json!("us-west-1"));
-        
+        assert_eq!(
+            deserialized.metadata.get("region").unwrap(),
+            &serde_json::json!("us-west-1")
+        );
+
         // Check schemas
         assert!(deserialized.schema.is_some());
         assert!(deserialized.query_schema.is_some());
         let query_schema = deserialized.query_schema.unwrap();
-        assert_eq!(query_schema.get("required").unwrap(), &serde_json::json!(["endpoint"]));
+        assert_eq!(
+            query_schema.get("required").unwrap(),
+            &serde_json::json!(["endpoint"])
+        );
     }
-} 
+}

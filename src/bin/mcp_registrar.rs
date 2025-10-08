@@ -1,8 +1,8 @@
 use clap::{ArgAction, Parser};
 use mcp_registrar::servers::mcp_registrar::McpRegistrarServer;
-use mcp_registrar::transport::{HttpTransportServer, stdio_transport::StdioTransportServer};
-use std::net::SocketAddr;
 use mcp_registrar::transport::stdio_transport::TransportServer;
+use mcp_registrar::transport::{stdio_transport::StdioTransportServer, HttpTransportServer};
+use std::net::SocketAddr;
 use tracing;
 use tracing_subscriber;
 
@@ -35,7 +35,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let stdio_enabled = !args.no_stdio;
 
     if !http_enabled && !stdio_enabled {
-        return Err("At least one transport must be enabled (specify --http-addr or omit --no-stdio)".into());
+        return Err(
+            "At least one transport must be enabled (specify --http-addr or omit --no-stdio)"
+                .into(),
+        );
     }
 
     match (stdio_enabled, http_enabled) {
@@ -69,7 +72,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         (false, true) => {
             tracing::info!(?args.http_addr, "Starting MCP Registrar server with HTTP transport");
             let http_server = HttpTransportServer::new(args.http_addr.unwrap(), server);
-            http_server.serve().await.map_err(|err| anyhow::Error::new(err))?;
+            http_server
+                .serve()
+                .await
+                .map_err(|err| anyhow::Error::new(err))?;
         }
         (false, false) => unreachable!(),
     }

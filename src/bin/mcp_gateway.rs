@@ -1,15 +1,22 @@
-use mcp_registrar::servers::tool_registry::{ToolRegistryServer, InvokeToolRequest};
+use mcp_registrar::models::tool::ToolInvocation;
 use mcp_registrar::servers::prompt_registry::PromptRegistryServer;
 use mcp_registrar::servers::resource_registry::ResourceRegistryServer;
+use mcp_registrar::servers::tool_registry::{InvokeToolRequest, ToolRegistryServer};
 use mcp_registrar::McpServer;
-use mcp_registrar::models::tool::ToolInvocation;
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
 
-fn write_error(stdout: &mut impl Write, id: &serde_json::Value, code: i64, message: &str) -> io::Result<()> {
+fn write_error(
+    stdout: &mut impl Write,
+    id: &serde_json::Value,
+    code: i64,
+    message: &str,
+) -> io::Result<()> {
     let mut obj = serde_json::Map::new();
     obj.insert("jsonrpc".into(), Value::String("2.0".into()));
-    if !id.is_null() { obj.insert("id".into(), id.clone()); }
+    if !id.is_null() {
+        obj.insert("id".into(), id.clone());
+    }
     obj.insert("error".into(), json!({ "code": code, "message": message }));
     writeln!(stdout, "{}", Value::Object(obj))
 }
@@ -61,7 +68,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let frame: Value = match serde_json::from_str(&line) {
             Ok(v) => v,
             Err(e) => {
-                let _ = write_error(&mut stdout, &Value::Null, -32700, &format!("Parse error: {}", e));
+                let _ = write_error(
+                    &mut stdout,
+                    &Value::Null,
+                    -32700,
+                    &format!("Parse error: {}", e),
+                );
                 continue;
             }
         };
@@ -255,15 +267,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(res) => {
                 let mut obj = serde_json::Map::new();
                 obj.insert("jsonrpc".into(), Value::String("2.0".into()));
-                if !id.is_null() { obj.insert("id".into(), id.clone()); }
+                if !id.is_null() {
+                    obj.insert("id".into(), id.clone());
+                }
                 obj.insert("result".into(), res);
                 writeln!(stdout, "{}", Value::Object(obj))?;
             }
             Err(msg) => {
                 // Map common errors to JSON-RPC codes
-                let code = if msg.starts_with("Method not found") { -32601 }
-                    else if msg.starts_with("Invalid params") { -32602 }
-                    else { -32603 };
+                let code = if msg.starts_with("Method not found") {
+                    -32601
+                } else if msg.starts_with("Invalid params") {
+                    -32602
+                } else {
+                    -32603
+                };
                 write_error(&mut stdout, &id, code, &msg)?;
             }
         }

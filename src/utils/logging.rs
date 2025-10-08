@@ -1,4 +1,4 @@
-use tracing::{Level, subscriber::set_global_default};
+use tracing::{subscriber::set_global_default, Level};
 use tracing_subscriber::FmtSubscriber;
 
 pub fn init_logger() {

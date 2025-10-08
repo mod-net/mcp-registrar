@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use serde::{
     de::{self, Deserializer, MapAccess, SeqAccess, Visitor},
     ser::SerializeStruct,
-    Serialize, Serializer, Deserialize,
+    Deserialize, Serialize, Serializer,
 };
 use std::collections::HashMap;
 use std::fmt;
@@ -63,14 +63,15 @@ impl FileToolStorage {
         info!("Saving {} tools to file: {:?}", tools.len(), self.file_path);
         let contents = serde_json::to_string_pretty(tools).context("Failed to serialize tools")?;
         // Atomic write: write to temp file in same directory, then rename
-        let tmp_path = self
-            .file_path
-            .with_extension("json.tmp");
+        let tmp_path = self.file_path.with_extension("json.tmp");
         fs::write(&tmp_path, &contents)
             .await
             .context("Failed to write temp tools file")?;
         if let Err(e) = fs::rename(&tmp_path, &self.file_path).await {
-            warn!("Atomic rename failed ({}). Falling back to direct write.", e);
+            warn!(
+                "Atomic rename failed ({}). Falling back to direct write.",
+                e
+            );
             fs::write(&self.file_path, &contents)
                 .await
                 .context("Failed to write tools file (fallback)")?;
@@ -100,7 +101,9 @@ impl<'de> Deserialize<'de> for FileToolStorage {
     {
         #[derive(Deserialize)]
         #[serde(field_identifier, rename_all = "snake_case")]
-        enum Field { FilePath }
+        enum Field {
+            FilePath,
+        }
 
         struct FileToolStorageVisitor;
 
@@ -115,7 +118,8 @@ impl<'de> Deserialize<'de> for FileToolStorage {
             where
                 V: SeqAccess<'de>,
             {
-                let file_path = seq.next_element()?
+                let file_path = seq
+                    .next_element()?
                     .ok_or_else(|| de::Error::invalid_length(0, &self))?;
                 Ok(file_path)
             }

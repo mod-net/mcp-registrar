@@ -1,5 +1,5 @@
-use registry_scheduler::servers::prompt_registry::PromptRegistryServer;
-use registry_scheduler::transport::stdio_transport::{StdioTransportServer, TransportServer};
+use mcp_registrar::servers::prompt_registry::PromptRegistryServer;
+use mcp_registrar::transport::stdio_transport::{StdioTransportServer, TransportServer};
 use clap::Parser;
 
 /// Prompt Registry Server CLI

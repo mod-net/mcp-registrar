@@ -23,7 +23,7 @@ async fn test_chain_index_file_resolution_all() {
     // Ensure CHAIN_INDEX_URL does not interfere
     std::env::remove_var("CHAIN_INDEX_URL");
 
-    let mp = registry_scheduler::utils::chain::resolve_chain_uri("chain://echo-wasm")
+    let mp = mcp_registrar::utils::chain::resolve_chain_uri("chain://echo-wasm")
         .await
         .expect("resolve via file");
     assert_eq!(mp.module_id, "echo-wasm");
@@ -48,7 +48,7 @@ async fn test_chain_index_file_resolution_all() {
     std::env::set_var("CHAIN_INDEX_FILE", path.to_str().unwrap());
     std::env::remove_var("CHAIN_INDEX_URL");
 
-    let mp = registry_scheduler::utils::chain::resolve_chain_uri("chain://tool-a")
+    let mp = mcp_registrar::utils::chain::resolve_chain_uri("chain://tool-a")
         .await
         .expect("resolve via file wrapped");
     assert_eq!(mp.module_id, "tool-a");
@@ -68,7 +68,7 @@ async fn test_chain_index_file_resolution_all() {
     std::env::set_var("CHAIN_INDEX_FILE", path.to_str().unwrap());
     std::env::remove_var("CHAIN_INDEX_URL");
 
-    let mp = registry_scheduler::utils::chain::resolve_chain_uri("chain://m2")
+    let mp = mcp_registrar::utils::chain::resolve_chain_uri("chain://m2")
         .await
         .expect("resolve via file array");
     assert_eq!(mp.module_id, "m2");

@@ -1,8 +1,8 @@
 use clap::Parser;
-use registry_scheduler::utils::{chain, ipfs, metadata};
+use mcp_registrar::utils::{chain, ipfs, metadata};
 use subxt::{config::PolkadotConfig, OnlineClient};
 use subxt::dynamic::{storage, Value};
-use registry_scheduler::config::env;
+use mcp_registrar::config::env;
 
 #[derive(Parser, Debug)]
 #[command(name = "query-module", about = "Retrieve a module mapping and metadata by SS58 or 0x pubkey hex")] 

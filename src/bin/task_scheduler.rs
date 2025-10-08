@@ -3,12 +3,12 @@ use std::sync::Arc;
 
 use clap::Parser;
 
-use registry_scheduler::TaskMetricsCollector;
-use registry_scheduler::servers::task_scheduler::DummyToolRegistry;
-use registry_scheduler::TaskExecutor;
-use registry_scheduler::utils::task_storage::{TaskStorage, FileTaskStorage};
-use registry_scheduler::servers::task_scheduler::TaskSchedulerServer;
-use registry_scheduler::transport::stdio_transport::{StdioTransportServer, TransportServer};
+use mcp_registrar::TaskMetricsCollector;
+use mcp_registrar::servers::task_scheduler::DummyToolRegistry;
+use mcp_registrar::TaskExecutor;
+use mcp_registrar::utils::task_storage::{TaskStorage, FileTaskStorage};
+use mcp_registrar::servers::task_scheduler::TaskSchedulerServer;
+use mcp_registrar::transport::stdio_transport::{StdioTransportServer, TransportServer};
 
 /// Task Scheduler Server CLI
 #[derive(Debug, Parser)]

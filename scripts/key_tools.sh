@@ -4,6 +4,6 @@
   "digest": "<set at runtime>",
   "signature": "<set at runtime>",
   "publish": false,
-  "chain_rpc_url": "wss://validator-3-comai.ngrok.dev",
-  ipfs_base: https://ipfs-api-comai.ngrok.dev
+  "chain_rpc_url": "wss://validator-1-comai.ngrok.dev",
+  ipfs_base: https://ipfs-api-comai.ngrok.dev/api/v0
 }

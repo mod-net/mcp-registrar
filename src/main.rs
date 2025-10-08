@@ -4,21 +4,21 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tracing_subscriber::fmt::init;
 
-use registry_scheduler::cli::cli_parser::{parse_args, Command};
-use registry_scheduler::models::tool::ToolInvocation;
-use registry_scheduler::servers::mcp_registrar::{McpRegistrarServer, RegisterServerRequest};
-use registry_scheduler::servers::prompt_registry::PromptRegistryServer;
-use registry_scheduler::servers::resource_registry::ResourceRegistryServer;
-use registry_scheduler::servers::task_executor::TaskExecutor;
-use registry_scheduler::servers::task_scheduler::{DummyToolRegistry, TaskSchedulerServer};
-use registry_scheduler::servers::tool_registry::{
+use mcp_registrar::cli::cli_parser::{parse_args, Command};
+use mcp_registrar::models::tool::ToolInvocation;
+use mcp_registrar::servers::mcp_registrar::{McpRegistrarServer, RegisterServerRequest};
+use mcp_registrar::servers::prompt_registry::PromptRegistryServer;
+use mcp_registrar::servers::resource_registry::ResourceRegistryServer;
+use mcp_registrar::servers::task_executor::TaskExecutor;
+use mcp_registrar::servers::task_scheduler::{DummyToolRegistry, TaskSchedulerServer};
+use mcp_registrar::servers::tool_registry::{
     InvokeToolRequest, InvokeToolResponse, ListToolsRequest, ListToolsResponse,
     RegisterToolRequest, RegisterToolResponse, ToolRegistryServer,
 };
-use registry_scheduler::transport::stdio_transport::{StdioTransportServer, TransportServer};
-use registry_scheduler::utils::task_storage::{FileTaskStorage, TaskStorage};
-use registry_scheduler::McpServer;
-use registry_scheduler::TaskMetricsCollector;
+use mcp_registrar::transport::stdio_transport::{StdioTransportServer, TransportServer};
+use mcp_registrar::utils::task_storage::{FileTaskStorage, TaskStorage};
+use mcp_registrar::McpServer;
+use mcp_registrar::TaskMetricsCollector;
 use std::fs;
 use std::io::{self, BufRead};
 

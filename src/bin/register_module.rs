@@ -1,10 +1,10 @@
 use clap::Parser;
-use registry_scheduler::utils::chain::decode_pubkey_from_owner;
+use mcp_registrar::utils::chain::decode_pubkey_from_owner;
 use subxt::{OnlineClient, config::PolkadotConfig};
 use subxt::dynamic::{tx, Value};
 use subxt_signer::{sr25519::Keypair, SecretUri};
 use std::str::FromStr;
-use registry_scheduler::config::env;
+use mcp_registrar::config::env;
 
 #[derive(Parser, Debug)]
 #[command(name = "register-module", about = "Register module metadata CID on-chain")]

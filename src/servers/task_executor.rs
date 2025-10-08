@@ -359,7 +359,7 @@ impl TaskExecutor {
     /// Get current memory usage for the task
     fn _get_current_memory_usage() -> u64 {
         // For testing or overrides, allow an env var to specify mock memory usage
-        if let Ok(val) = std::env::var("REGISTRY_SCHEDULER_MOCK_MEMORY_BYTES") {
+        if let Ok(val) = std::env::var("mcp_registrar_MOCK_MEMORY_BYTES") {
             if let Ok(bytes) = val.parse::<u64>() {
                 return bytes;
             }

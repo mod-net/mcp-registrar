@@ -1,5 +1,5 @@
-use registry_scheduler::transport::{McpServer, HandlerResult};
-use registry_scheduler::transport::stdio_transport::StdioTransportServer;
+use mcp_registrar::transport::{McpServer, HandlerResult};
+use mcp_registrar::transport::stdio_transport::StdioTransportServer;
 use std::io;
 use std::sync::Arc;
 use async_trait::async_trait;

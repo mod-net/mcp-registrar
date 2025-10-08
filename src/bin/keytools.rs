@@ -11,7 +11,7 @@ use clap::{Parser, Subcommand, Args, ValueEnum};
 use rand::RngCore;
 use scrypt::Params;
 use serde::{Deserialize, Serialize};
-use registry_scheduler::config::env;
+use mcp_registrar::config::env;
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum Scheme { Sr25519, Ed25519 }

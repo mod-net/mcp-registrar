@@ -1,9 +1,9 @@
-use registry_scheduler::servers::resource_registry::{
+use mcp_registrar::servers::resource_registry::{
     ResourceRegistryServer, RegisterResourceRequest, ListResourcesRequest, 
     GetResourceRequest, QueryResourceRequest
 };
-use registry_scheduler::transport::McpServer;
-use registry_scheduler::models::resource::{ResourceType, ResourceQuery};
+use mcp_registrar::transport::McpServer;
+use mcp_registrar::models::resource::{ResourceType, ResourceQuery};
 use std::collections::HashMap;
 
 #[tokio::test]

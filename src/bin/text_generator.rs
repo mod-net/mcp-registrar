@@ -1,6 +1,6 @@
-use registry_scheduler::transport::stdio_transport::StdioTransportServer;
-use registry_scheduler::transport::stdio_transport::TransportServer;
-use registry_scheduler::servers::text_generator::TextGeneratorServer;
+use mcp_registrar::transport::stdio_transport::StdioTransportServer;
+use mcp_registrar::transport::stdio_transport::TransportServer;
+use mcp_registrar::servers::text_generator::TextGeneratorServer;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

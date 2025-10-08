@@ -1,6 +1,6 @@
-use registry_scheduler::servers::tool_registry::{ToolRegistryServer, InvokeToolRequest};
-use registry_scheduler::transport::McpServer;
-use registry_scheduler::models::tool::ToolInvocation;
+use mcp_registrar::servers::tool_registry::{ToolRegistryServer, InvokeToolRequest};
+use mcp_registrar::transport::McpServer;
+use mcp_registrar::models::tool::ToolInvocation;
 
 #[tokio::test]
 async fn invoke_echo_process_tool_via_registry() {

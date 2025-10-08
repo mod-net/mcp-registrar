@@ -58,11 +58,21 @@ pub struct QueryResourceResponse {
     pub result: ResourceQueryResult,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ResourceRegistryServer {
     resources: Arc<Mutex<HashMap<String, Resource>>>,
     resource_servers: Arc<Mutex<HashMap<String, String>>>, // Maps server_id to endpoint
     http: Client,
+}
+
+impl Clone for ResourceRegistryServer {
+    fn clone(&self) -> Self {
+        Self {
+            resources: self.resources.clone(),
+            resource_servers: self.resource_servers.clone(),
+            http: self.http.clone(),
+        }
+    }
 }
 
 impl ResourceRegistryServer {

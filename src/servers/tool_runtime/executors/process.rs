@@ -52,26 +52,53 @@ impl Executor for ProcessExecutor {
         drop(stdin);
 
         let started = std::time::Instant::now();
-        let next_res = tokio::time::timeout(
-            std::time::Duration::from_millis(policy.timeout_ms),
-            reader.next_line(),
-        )
-        .await
-        .map_err(|_| {
-            warn!("process tool {} timed out after {} ms", tool_id, policy.timeout_ms);
-            Error::InvalidState(format!("tool {} timed out", tool_id))
-        })?;
+        loop {
+            let elapsed_ms = started.elapsed().as_millis() as u64;
+            if elapsed_ms >= policy.timeout_ms {
+                warn!("process tool {} timed out after {} ms", tool_id, policy.timeout_ms);
+                return Err(Error::InvalidState(format!("tool {} timed out", tool_id)));
+            }
 
-        let opt_line = next_res.map_err(|e| Error::Other(Box::new(e)))?;
-        let line = opt_line.ok_or_else(|| Error::InvalidState("empty tool response".into()))?;
-        if line.len() > policy.max_output_bytes {
-            return Err(Error::InvalidState("tool output too large".into()));
+            let remaining = policy.timeout_ms - elapsed_ms;
+            let next_res = tokio::time::timeout(
+                std::time::Duration::from_millis(remaining.max(1)),
+                reader.next_line(),
+            )
+            .await
+            .map_err(|_| {
+                warn!("process tool {} timed out after {} ms", tool_id, policy.timeout_ms);
+                Error::InvalidState(format!("tool {} timed out", tool_id))
+            })?;
+
+            let opt_line = next_res.map_err(|e| Error::Other(Box::new(e)))?;
+            let line = match opt_line {
+                Some(l) => l,
+                None => return Err(Error::InvalidState("empty tool response".into())),
+            };
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            match serde_json::from_str::<serde_json::Value>(trimmed) {
+                Ok(val) => {
+                    if line.len() > policy.max_output_bytes {
+                        return Err(Error::InvalidState("tool output too large".into()));
+                    }
+                    let duration_ms = started.elapsed().as_millis();
+                    let bytes = line.len();
+                    info!("process tool {} completed in {} ms ({} bytes)", tool_id, duration_ms, bytes);
+                    crate::monitoring::TOOL_METRICS.record(duration_ms as u64, bytes as u64, false);
+                    return Ok(val);
+                }
+                Err(_) => {
+                    debug!(
+                        "process tool {} emitted non-JSON line, skipping: {}",
+                        tool_id,
+                        trimmed
+                    );
+                    continue;
+                }
+            }
         }
-        let duration_ms = started.elapsed().as_millis();
-        let bytes = line.len();
-        info!("process tool {} completed in {} ms ({} bytes)", tool_id, duration_ms, bytes);
-        let resp: serde_json::Value = serde_json::from_str(&line)?;
-        crate::monitoring::TOOL_METRICS.record(duration_ms as u64, bytes as u64, false);
-        Ok(resp)
     }
 }

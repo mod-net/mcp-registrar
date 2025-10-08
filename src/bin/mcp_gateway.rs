@@ -1,8 +1,8 @@
-use registry_scheduler::servers::tool_registry::{ToolRegistryServer, InvokeToolRequest};
-use registry_scheduler::servers::prompt_registry::PromptRegistryServer;
-use registry_scheduler::servers::resource_registry::ResourceRegistryServer;
-use registry_scheduler::McpServer;
-use registry_scheduler::models::tool::ToolInvocation;
+use mcp_registrar::servers::tool_registry::{ToolRegistryServer, InvokeToolRequest};
+use mcp_registrar::servers::prompt_registry::PromptRegistryServer;
+use mcp_registrar::servers::resource_registry::ResourceRegistryServer;
+use mcp_registrar::McpServer;
+use mcp_registrar::models::tool::ToolInvocation;
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
 
@@ -236,7 +236,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 "metrics/get" => {
                     // Return executor/tool metrics snapshot
-                    let (inv, err, total_ms, max_ms, total_bytes) = registry_scheduler::monitoring::TOOL_METRICS.snapshot();
+                    let (inv, err, total_ms, max_ms, total_bytes) = mcp_registrar::monitoring::TOOL_METRICS.snapshot();
                     Ok(json!({
                         "tool": {
                             "invocations": inv,

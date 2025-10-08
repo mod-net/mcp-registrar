@@ -9,8 +9,8 @@ use subxt::dynamic::{tx, Value};
 use subxt_signer::{sr25519, SecretUri};
 use std::str::FromStr;
 use reqwest::blocking::{Client, multipart::{Form, Part}};
-use registry_scheduler::utils::chain;
-use registry_scheduler::config::env;
+use mcp_registrar::utils::chain;
+use mcp_registrar::config::env;
 
 #[derive(Parser, Debug)]
 #[command(name = "publish-module", about = "Generate signed module metadata (v1)")]

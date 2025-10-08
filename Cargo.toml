@@ -1,5 +1,5 @@
 [package]
-name = "registry-scheduler"
+name = "mcp-registrar"
 version = "0.1.0"
 edition = "2021"
 
@@ -28,7 +28,7 @@ env_logger = "0.11.8"
 tempfile = "3.19.1"
 anyhow = "1.0"
 reqwest = { version = "0.12", default-features = false, features = ["json", "gzip", "brotli", "rustls-tls", "multipart", "blocking"] }
-axum = { version = "0.8.6", features = ["json"] }
+axum = { version = "0.8.6", features = ["json", "ws"] }
 tower-http = { version = "0.5", features = ["cors"] }
 aes-gcm = "0.10"
 scrypt = "0.11"

@@ -1,5 +1,5 @@
-use registry_scheduler::servers::mcp_registrar::{McpRegistrarServer, RegisterServerRequest};
-use registry_scheduler::transport::McpServer;
+use mcp_registrar::servers::mcp_registrar::{McpRegistrarServer, RegisterServerRequest};
+use mcp_registrar::transport::McpServer;
 
 #[tokio::test]
 async fn test_registrar_register_server() {

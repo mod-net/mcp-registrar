@@ -1,5 +1,5 @@
-use registry_scheduler::utils::tool_storage::{FileToolStorage, ToolStorage};
-use registry_scheduler::models::tool::Tool;
+use mcp_registrar::utils::tool_storage::{FileToolStorage, ToolStorage};
+use mcp_registrar::models::tool::Tool;
 use tempfile::tempdir;
 use std::path::PathBuf;
 

@@ -1,8 +1,8 @@
 use clap::{ArgAction, Parser};
-use registry_scheduler::servers::mcp_registrar::McpRegistrarServer;
-use registry_scheduler::transport::{HttpTransportServer, stdio_transport::StdioTransportServer};
+use mcp_registrar::servers::mcp_registrar::McpRegistrarServer;
+use mcp_registrar::transport::{HttpTransportServer, stdio_transport::StdioTransportServer};
 use std::net::SocketAddr;
-use registry_scheduler::transport::stdio_transport::TransportServer;
+use mcp_registrar::transport::stdio_transport::TransportServer;
 use tracing;
 use tracing_subscriber;
 

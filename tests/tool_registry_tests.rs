@@ -1,8 +1,8 @@
-use registry_scheduler::servers::tool_registry::{
+use mcp_registrar::servers::tool_registry::{
     ToolRegistryServer, RegisterToolRequest, ListToolsRequest, GetToolRequest, InvokeToolRequest
 };
-use registry_scheduler::transport::McpServer;
-use registry_scheduler::models::tool::ToolInvocation;
+use mcp_registrar::transport::McpServer;
+use mcp_registrar::models::tool::ToolInvocation;
 use std::collections::HashMap;
 
 #[tokio::test]

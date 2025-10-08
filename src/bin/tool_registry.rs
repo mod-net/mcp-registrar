@@ -1,5 +1,5 @@
-use registry_scheduler::servers::tool_registry::ToolRegistryServer;
-use registry_scheduler::transport::stdio_transport::{StdioTransportServer, TransportServer};
+use mcp_registrar::servers::tool_registry::ToolRegistryServer;
+use mcp_registrar::transport::stdio_transport::{StdioTransportServer, TransportServer};
 use clap::Parser;
 
 /// Tool Registry Server CLI

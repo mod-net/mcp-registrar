@@ -5,8 +5,8 @@
   "runtime": "process",
   "description": "List and invoke tools from the in-process registry via a one-shot CLI",
   "entry": {
-    "command": "cargo",
-    "args": ["run", "--quiet", "--bin", "registry-scheduler", "--", "registry-tool"]
+    "command": "./target/debug/registry-scheduler",
+    "args": ["registry-tool"]
   },
   "schema": {
     "parameters": {

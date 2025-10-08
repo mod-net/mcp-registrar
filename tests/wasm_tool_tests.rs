@@ -1,5 +1,5 @@
-use registry_scheduler::servers::tool_registry::ToolRegistryServer;
-use registry_scheduler::transport::McpServer;
+use mcp_registrar::servers::tool_registry::ToolRegistryServer;
+use mcp_registrar::transport::McpServer;
 use serde_json::json;
 
 #[tokio::test]

@@ -11,7 +11,7 @@ use std::str::FromStr;
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use aes_gcm::aead::{Aead, KeyInit};
 use scrypt::Params;
-use registry_scheduler::config::env;
+use mcp_registrar::config::env;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -200,9 +200,17 @@ async fn main() -> anyhow::Result<()> {
             });
             if let Some(b)=&args.ipfs_base { body["ipfs_base"]=serde_json::Value::String(b.clone()); }
             let pub_resp = client.post(args.module_api.join("modules/publish")?).json(&body).send().await?;
-            if !pub_resp.status().is_success() { let status=pub_resp.status(); let txt=pub_resp.text().await.unwrap_or_default(); anyhow::bail!("publish: {status} - {txt}"); }
-            let v: serde_json::Value = pub_resp.json().await?;
-            let metadata_cid = v.get("metadata_cid").and_then(|x| x.as_str()).ok_or_else(|| anyhow::anyhow!("missing metadata_cid"))?.to_string();
+            let status = pub_resp.status();
+            let text = pub_resp.text().await.unwrap_or_default();
+            if !status.is_success() {
+                anyhow::bail!("publish: {status} - {text}");
+            }
+            let v: serde_json::Value = serde_json::from_str(&text).map_err(|e| anyhow::anyhow!("publish response parse error: {e}; body={text}"))?;
+            let metadata_cid = v
+                .get("metadata_cid")
+                .and_then(|x| x.as_str())
+                .ok_or_else(|| anyhow::anyhow!("missing metadata_cid; body={text}"))?
+                .to_string();
 
             // 4) Register on-chain via server (provide same creds)
             let mut reg = serde_json::json!({

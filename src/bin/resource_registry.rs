@@ -1,5 +1,5 @@
-use registry_scheduler::servers::resource_registry::ResourceRegistryServer;
-use registry_scheduler::transport::stdio_transport::{StdioTransportServer, TransportServer};
+use mcp_registrar::servers::resource_registry::ResourceRegistryServer;
+use mcp_registrar::transport::stdio_transport::{StdioTransportServer, TransportServer};
 use clap::Parser;
 
 /// Resource Registry Server CLI

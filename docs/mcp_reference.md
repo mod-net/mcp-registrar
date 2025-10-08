@@ -519,22 +519,26 @@ Would turn into
     }
   ]
 }
-```
-
-### Server Configuration
-
-MCP Servers are configured in $HOME/.erasmus/mcp/config.json
-
-```json
-{
-  "mcpServers": {
-    "github": {
-      "command": "./erasmus/mcp/github/server",
-      "args": ["studio"],
-      "env": {
-        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN}"
       }
     }
   }
 }
 ```
+
+Requests are sent via `POST /mcp/sse` with a JSON body `{"session_id":"<uuid>","frame":{...jsonrpc...}}`, and responses/notifications stream over `GET /mcp/sse` using SSE events. The server enforces protocol version `2024-11-05` as defined in `ModuleMcpDispatcher::handle_initialize()` (`src/bin/module_api.rs`).
+
+#### Windsurf IDE configuration
+
+The Windsurf IDE only accepts the simplified `mcpServers.<name>.serverUrl` format. Use:
+
+```json
+{
+  "mcpServers": {
+    "module_api": {
+      "serverUrl": "http://127.0.0.1:8090/mcp/sse"
+    }
+  }
+}
+```
+
+Windsurf posts raw JSON-RPC frames without a `session_id`. The server automatically associates the first active SSE session or the `X-MCP-Session` header when present. If multiple sessions are open concurrently, prefer the richer transport configuration above and include `session_id` in the POST payload.

@@ -24,7 +24,7 @@ struct Cli {
     base_url: Url,
 
     /// Request timeout in seconds
-    #[arg(long, default_value_t = 10)]
+    #[arg(long, default_value_t = 60)]
     timeout_secs: u64,
 
     #[command(subcommand)]
